@@ -4,6 +4,14 @@ Deno.serve(async (req) => {
   try {
     const { apiKey, script, duration, style } = await req.json();
 
+    console.log('Generating scene plan...');
+    console.log(`Script length: ${script?.length || 0} chars`);
+    console.log(`Duration: ${duration}s, Style: ${style}`);
+
+    if (!script || script.trim().length === 0) {
+      throw new Error('Script is empty or undefined');
+    }
+
     const prompt = `You are a video production planner. Analyze this script and create a scene breakdown for video generation.
 
 Script: "${script}"
@@ -17,16 +25,21 @@ Create 3-5 scenes that:
 - Total duration must equal ${duration} seconds
 - Include detailed visual prompts for AI video generation
 
-Return ONLY a JSON array with this exact structure:
-[
-  {
-    "duration": 5,
-    "text": "portion of script for this scene",
-    "prompt": "detailed visual description for AI video generation, ${style} style"
-  }
-]
+Return a JSON object with a "scenes" array. Each scene must have:
+- "duration": number (in seconds)
+- "text": "portion of script for this scene"
+- "prompt": "detailed visual description for AI video generation, ${style} style"
 
-Example prompt style: "Cinematic aerial shot of vast ocean at sunset, dramatic clouds, 4K quality, smooth camera movement"`;
+Example:
+{
+  "scenes": [
+    {
+      "duration": 5,
+      "text": "portion of script",
+      "prompt": "Cinematic aerial shot of vast ocean at sunset, dramatic clouds, 4K quality, smooth camera movement"
+    }
+  ]
+}`;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -46,29 +59,62 @@ Example prompt style: "Cinematic aerial shot of vast ocean at sunset, dramatic c
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || 'OpenAI API error');
+      const errorText = await response.text();
+      console.error(`OpenAI API error (${response.status}):`, errorText);
+      try {
+        const error = JSON.parse(errorText);
+        throw new Error(`OpenAI API error: ${error.error?.message || errorText}`);
+      } catch {
+        throw new Error(`OpenAI API error (${response.status}): ${errorText}`);
+      }
     }
 
     const data = await response.json();
-    let result = JSON.parse(data.choices[0].message.content);
+    console.log('OpenAI response received');
+    
+    let result;
+    try {
+      result = JSON.parse(data.choices[0].message.content);
+    } catch (parseError) {
+      console.error('Failed to parse OpenAI response:', data.choices[0].message.content);
+      throw new Error('Invalid JSON response from OpenAI');
+    }
     
     // Extract scenes array if wrapped in object
-    const scenes = result.scenes || result;
+    let scenes = Array.isArray(result) ? result : result.scenes;
+    
+    if (!scenes || !Array.isArray(scenes) || scenes.length === 0) {
+      console.error('Invalid scenes data:', result);
+      throw new Error('No valid scenes generated');
+    }
+
+    console.log(`Generated ${scenes.length} scenes`);
+
+    // Validate scene structure
+    scenes.forEach((scene, idx) => {
+      if (!scene.duration || !scene.prompt) {
+        console.error(`Scene ${idx} missing required fields:`, scene);
+        throw new Error(`Scene ${idx} is missing duration or prompt`);
+      }
+    });
 
     // Validate and adjust durations
-    const totalDuration = scenes.reduce((sum, s) => sum + s.duration, 0);
+    const totalDuration = scenes.reduce((sum, s) => sum + (s.duration || 0), 0);
+    console.log(`Total scene duration: ${totalDuration}s (target: ${duration}s)`);
+    
     if (Math.abs(totalDuration - duration) > 2) {
       const ratio = duration / totalDuration;
       scenes.forEach(s => {
-        s.duration = Math.round(s.duration * ratio);
+        s.duration = Math.max(3, Math.round(s.duration * ratio));
       });
+      console.log('Adjusted scene durations to match target');
     }
 
     return Response.json({ scenes });
 
   } catch (error) {
     console.error('Generate scene plan error:', error);
+    console.error('Error stack:', error.stack);
     return Response.json({ error: error.message }, { status: 500 });
   }
 });

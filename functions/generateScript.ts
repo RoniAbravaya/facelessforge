@@ -4,6 +4,9 @@ Deno.serve(async (req) => {
   try {
     const { apiKey, topic, duration, language, style } = await req.json();
 
+    console.log('Generating script...');
+    console.log(`Topic: ${topic}, Duration: ${duration}s, Language: ${language}`);
+
     const prompt = `You are a professional video script writer. Create an engaging, concise script for a ${duration}-second video about: ${topic}
 
 Requirements:
@@ -34,17 +37,30 @@ Return ONLY the script text, nothing else.`;
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || 'OpenAI API error');
+      const errorText = await response.text();
+      console.error(`OpenAI API error (${response.status}):`, errorText);
+      try {
+        const error = JSON.parse(errorText);
+        throw new Error(`OpenAI API error: ${error.error?.message || errorText}`);
+      } catch {
+        throw new Error(`OpenAI API error (${response.status}): ${errorText}`);
+      }
     }
 
     const data = await response.json();
     const script = data.choices[0].message.content.trim();
 
+    if (!script || script.length === 0) {
+      throw new Error('Generated script is empty');
+    }
+
+    console.log(`Script generated successfully (${script.length} chars)`);
+
     return Response.json({ script });
 
   } catch (error) {
     console.error('Generate script error:', error);
+    console.error('Error stack:', error.stack);
     return Response.json({ error: error.message }, { status: 500 });
   }
 });
