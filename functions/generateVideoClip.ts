@@ -170,9 +170,6 @@ Deno.serve(async (req) => {
       if (aspectRatio === '16:9' || aspectRatio === '9:16') {
         lumaBody.aspect_ratio = aspectRatio;
       }
-      if (loop === false) {
-        lumaBody.loop = false;
-      }
 
       const requestUrl = 'https://api.lumalabs.ai/dream-machine/v1/generations/video';
       const requestBody = JSON.stringify(lumaBody);
