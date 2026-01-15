@@ -98,16 +98,25 @@ Example:
       }
     });
 
-    // Validate and adjust durations
-    const totalDuration = scenes.reduce((sum, s) => sum + (s.duration || 0), 0);
+    // Validate and adjust durations to fit 4-8 second range for video generation APIs
+    let totalDuration = scenes.reduce((sum, s) => sum + (s.duration || 0), 0);
     console.log(`Total scene duration: ${totalDuration}s (target: ${duration}s)`);
     
+    // Clamp each scene to 4-8 seconds and recalculate total
+    scenes.forEach(s => {
+      s.duration = Math.max(4, Math.min(8, Math.round(s.duration)));
+    });
+    
+    totalDuration = scenes.reduce((sum, s) => sum + (s.duration || 0), 0);
+    console.log(`After clamping to 4-8s range: ${totalDuration}s`);
+    
+    // If total doesn't match target duration, adjust scenes proportionally
     if (Math.abs(totalDuration - duration) > 2) {
-      const ratio = duration / totalDuration;
+      const ratio = Math.max(0.5, Math.min(1.5, duration / totalDuration));
       scenes.forEach(s => {
-        s.duration = Math.max(3, Math.round(s.duration * ratio));
+        s.duration = Math.max(4, Math.min(8, Math.round(s.duration * ratio)));
       });
-      console.log('Adjusted scene durations to match target');
+      console.log('Adjusted scene durations while maintaining 4-8s bounds');
     }
 
     return Response.json({ scenes });
