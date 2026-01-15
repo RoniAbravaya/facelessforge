@@ -155,6 +155,12 @@ async function generateVideo(base44, project, jobId) {
     } else {
       const sceneArtifacts = await base44.asServiceRole.entities.Artifact.filter({ job_id: jobId, artifact_type: 'scene_plan' });
       scenes = sceneArtifacts[0]?.metadata?.scenes;
+      // Ensure all scene durations are within 4-8 second bounds (for video generation APIs)
+      if (scenes) {
+        scenes.forEach(s => {
+          s.duration = Math.max(4, Math.min(8, Math.round(s.duration)));
+        });
+      }
       console.log('Skipping scene planning - already completed');
     }
 
