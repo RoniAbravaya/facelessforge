@@ -207,7 +207,7 @@ export default function ProjectDetails() {
           </Card>
         </div>
 
-        {/* Progress Bar */}
+        {/* Progress Bar & Fetch Button */}
         {(currentStatus === 'generating' || currentStatus === 'running') && (
           <Card className="border-0 shadow-sm mb-8">
             <CardContent className="pt-6">
@@ -215,7 +215,27 @@ export default function ProjectDetails() {
                 <p className="text-sm font-medium text-slate-700">
                   {latestJob?.current_step || 'Processing...'}
                 </p>
-                <p className="text-sm text-slate-600">{latestJob?.progress || 0}%</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm text-slate-600">{latestJob?.progress || 0}%</p>
+                  <Button
+                    size="sm"
+                    onClick={handleFetchGenerations}
+                    disabled={fetchingGenerations}
+                    variant="outline"
+                  >
+                    {fetchingGenerations ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Fetching...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4 mr-2" />
+                        Fetch Videos
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
               <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
                 <div
