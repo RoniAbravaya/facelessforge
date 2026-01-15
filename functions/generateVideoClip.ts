@@ -174,23 +174,28 @@ Deno.serve(async (req) => {
         lumaBody.loop = false;
       }
 
-      console.log('=== LUMA API REQUEST ===');
-      console.log(`URL: https://api.lumalabs.ai/dream-machine/v1/generations/video`);
-      console.log(`Method: POST`);
-      console.log(`Headers:`, JSON.stringify({ 
-        'Authorization': `Bearer ${apiKey.substring(0, 20)}...${apiKey.substring(apiKey.length - 20)}`,
-        'Content-Type': 'application/json' 
-      }, null, 2));
-      console.log(`Body:`, JSON.stringify(lumaBody, null, 2));
-      console.log(`Prompt length: ${prompt.length} chars`);
-      console.log(`Duration: ${durationNum}s (type: ${typeof durationNum})`);
-      console.log(`API Key valid: ${apiKey && apiKey.length > 0}`);
+      const requestUrl = 'https://api.lumalabs.ai/dream-machine/v1/generations/video';
+      const requestBody = JSON.stringify(lumaBody);
 
-      const response = await fetch('https://api.lumalabs.ai/dream-machine/v1/generations/video', {
+      console.log('=== LUMA API REQUEST ===');
+      console.log(`Full URL: ${requestUrl}`);
+      console.log(`Method: POST`);
+      console.log(`Full Headers:`, JSON.stringify(lumaHeaders, null, 2));
+      console.log(`Full Body: ${requestBody}`);
+      console.log(`Body length: ${requestBody.length} bytes`);
+      console.log(`Prompt: "${prompt}"`);
+      console.log(`Duration: ${durationNum}s (type: ${typeof durationNum}, value: ${durationNum})`);
+      console.log(`API Key first 50 chars: ${apiKey.substring(0, 50)}`);
+      console.log(`API Key last 50 chars: ${apiKey.substring(Math.max(0, apiKey.length - 50))}`);
+
+      console.log('Making fetch request...');
+      const response = await fetch(requestUrl, {
         method: 'POST',
         headers: lumaHeaders,
-        body: JSON.stringify(lumaBody)
+        body: requestBody
       });
+
+      console.log(`Fetch completed, status: ${response.status}`);
 
       console.log(`Response Status: ${response.status} ${response.statusText}`);
       console.log(`Response Headers:`, JSON.stringify({
