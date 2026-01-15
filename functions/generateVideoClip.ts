@@ -119,8 +119,8 @@ Deno.serve(async (req) => {
   try {
     const { apiKey, providerType, prompt, duration, aspectRatio } = await req.json();
     
-    // Ensure duration is a number and valid
-    const durationNum = Math.max(Math.min(Number(duration) || 8, 8), 4);
+    // Ensure duration is an integer and valid (4-8 seconds)
+    const durationNum = Math.max(Math.min(Math.round(Number(duration) || 8), 8), 4);
 
     console.log('=== Generate Video Clip Request ===');
     console.log(`Provider: ${providerType}`);
