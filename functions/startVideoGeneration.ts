@@ -48,8 +48,7 @@ Deno.serve(async (req) => {
     // Start generation asynchronously
     generateVideo(base44, project, jobId).catch(error => {
       console.error('Video generation failed:', error);
-      logEvent(base44, jobId, 'error', 'step_failed', error.message, null, { error: error.stack });
-      updateJobProgress(base44, jobId, projectId, 'failed', 'error', 0, error.message);
+      // Error already logged and progress updated in generateVideo catch block
     });
 
     return Response.json({ success: true, message: 'Video generation started' });
