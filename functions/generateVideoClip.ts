@@ -162,7 +162,7 @@ Deno.serve(async (req) => {
       console.log(`[Luma Request] Body:`, JSON.stringify(lumaBody));
       console.log(`[Luma Request] API Key length: ${apiKey?.length}, First 10 chars: ${apiKey?.substring(0, 10)}...`);
 
-      const response = await fetch('https://api.lumalabs.ai/dream-machine/v1/generations', {
+      const response = await fetch('https://api.lumalabs.ai/dream-machine/v1/generations/video', {
         method: 'POST',
         headers: lumaHeaders,
         body: JSON.stringify(lumaBody)
