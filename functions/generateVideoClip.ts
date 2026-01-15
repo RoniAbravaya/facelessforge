@@ -118,14 +118,16 @@ async function pollVeoGeneration(operationName, apiKey, maxAttempts = 72) {
 Deno.serve(async (req) => {
   try {
     const { apiKey, providerType, prompt, duration, aspectRatio } = await req.json();
-    
+
     // Ensure duration is an integer and valid (4-8 seconds)
-    const durationNum = Math.max(Math.min(Math.round(Number(duration) || 8), 8), 4);
+    const parsedDuration = Number(duration);
+    console.log(`RAW duration value:`, { duration, parsedDuration, type: typeof duration });
+    const durationNum = Math.max(4, Math.min(8, Math.round(parsedDuration)));
 
     console.log('=== Generate Video Clip Request ===');
     console.log(`Provider: ${providerType}`);
     console.log(`Prompt: ${prompt?.substring(0, 150)}...`);
-    console.log(`Duration: ${durationNum}s (requested: ${duration}s), Aspect Ratio: ${aspectRatio}`);
+    console.log(`Duration after clamping: ${durationNum}s (raw: ${duration}, parsed: ${parsedDuration}), Aspect Ratio: ${aspectRatio}`);
     
     if (!apiKey) {
       throw new Error(`API key is missing for provider: ${providerType}`);
