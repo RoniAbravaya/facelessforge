@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          model: 'ray',
+          model: 'ray-3',
           prompt,
           aspect_ratio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '16:9' ? '16:9' : '1:1',
           loop: false
