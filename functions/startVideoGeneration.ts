@@ -190,11 +190,12 @@ async function generateVideo(base44, project, jobId) {
     // Step 4: Generate Video Clips
     let clipUrls = [];
     if (startStepIndex <= 4) {
+      currentStep = 'video_clip_generation';
       // Get already generated clips
       const existingClips = await base44.asServiceRole.entities.Artifact.filter({ job_id: jobId, artifact_type: 'video_clip' });
       const generatedScenes = new Set(existingClips.map(c => c.scene_index));
 
-      await updateJobProgress(base44, jobId, projectId, 'running', 'video_clip_generation', 65);
+      await updateJobProgress(base44, jobId, projectId, 'running', currentStep, 65);
       await logEvent(base44, jobId, 'video_clip_generation', 'step_started', `Generating ${scenes.length} video clips`);
 
       for (let i = 0; i < scenes.length; i++) {
