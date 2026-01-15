@@ -282,8 +282,8 @@ async function generateVideo(base44, project, jobId) {
 
   } catch (error) {
     console.error('Generation error:', error);
-    await updateJobProgress(base44, jobId, projectId, 'failed', job.current_step || 'error', 0, error.message);
-    await logEvent(base44, jobId, 'error', 'step_failed', error.message, null, { error: error.stack });
+    await updateJobProgress(base44, jobId, projectId, 'failed', currentStep, 0, error.message);
+    await logEvent(base44, jobId, currentStep, 'step_failed', error.message, null, { error: error.stack });
     throw error;
   }
 }
