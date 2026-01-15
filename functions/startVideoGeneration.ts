@@ -96,6 +96,7 @@ async function generateVideo(base44, project, jobId) {
     }
 
     if (startStepIndex <= 0) {
+      currentStep = 'initialization';
       await logEvent(base44, jobId, 'initialization', 'step_finished', 'All integrations loaded', 10);
     }
 
