@@ -198,27 +198,39 @@ Deno.serve(async (req) => {
       console.log(`Fetch completed, status: ${response.status}`);
 
       console.log(`Response Status: ${response.status} ${response.statusText}`);
-      console.log(`Response Headers:`, JSON.stringify({
+      console.log(`All Response Headers:`, {
         'content-type': response.headers.get('content-type'),
-        'content-length': response.headers.get('content-length')
-      }, null, 2));
+        'content-length': response.headers.get('content-length'),
+        'x-request-id': response.headers.get('x-request-id'),
+        'date': response.headers.get('date'),
+        'cache-control': response.headers.get('cache-control'),
+        'server': response.headers.get('server')
+      });
 
       if (!response.ok) {
         const errorText = await response.text();
         console.error('=== LUMA API ERROR ===');
-        console.error(`Status: ${response.status}`);
+        console.error(`Status Code: ${response.status}`);
         console.error(`Status Text: ${response.statusText}`);
-        console.error(`Raw Response:`, errorText);
-        console.error(`Response length: ${errorText.length} chars`);
+        console.error(`Raw error text: "${errorText}"`);
+        console.error(`Error text length: ${errorText.length} chars`);
+        console.error(`Error text as bytes: ${Buffer.byteLength(errorText, 'utf-8')} bytes`);
+        console.error(`Error text charCodes:`, errorText.split('').map(c => c.charCodeAt(0)));
 
         try {
           const error = JSON.parse(errorText);
-          console.error(`Parsed error object:`, JSON.stringify(error, null, 2));
+          console.error(`Successfully parsed as JSON:`, JSON.stringify(error, null, 2));
+          console.error(`Error keys:`, Object.keys(error));
+          console.error(`Error detail:`, error.detail);
+          console.error(`Error message:`, error.message);
           throw new Error(`Luma API error: ${error.error?.message || error.message || error.detail || errorText}`);
         } catch (parseError) {
           console.error(`Failed to parse error as JSON:`, parseError.message);
+          console.error(`Attempted JSON parse of: "${errorText}"`);
           throw new Error(`Luma API error (${response.status}): ${errorText}`);
         }
+      } else {
+        console.log('=== LUMA API SUCCESS ===');
       }
 
       const data = await response.json();
