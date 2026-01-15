@@ -85,6 +85,24 @@ export default function ProjectDetails() {
     refetchInterval: 2000
   });
 
+  const [generationResults, setGenerationResults] = useState(null);
+  const [fetchingGenerations, setFetchingGenerations] = useState(false);
+
+  const handleFetchGenerations = async () => {
+    setFetchingGenerations(true);
+    try {
+      const result = await base44.functions.invoke('fetchLumaGenerations', {
+        apiKey: 'luma-6896ffad-763d-410f-ac0a-08161704b33a-897c4df1-f379-4a8a-a4f9-013e87d163e2'
+      });
+      setGenerationResults(result.data);
+      toast.success(`Found ${result.data.completed} completed videos`);
+    } catch (error) {
+      toast.error(`Failed to fetch: ${error.message}`);
+    } finally {
+      setFetchingGenerations(false);
+    }
+  };
+
   // Real-time updates using Base44 subscriptions
   useEffect(() => {
     if (!jobs[0]?.id) return;
