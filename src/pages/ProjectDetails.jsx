@@ -10,7 +10,7 @@ import {
   XCircle, Clock, FileText, Mic, Video, Clapperboard, AlertCircle
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { createPageUrl } from './utils';
+import { createPageUrl } from '../utils';
 import { motion } from 'framer-motion';
 import JobTimeline from '../components/project/JobTimeline';
 import ArtifactList from '../components/project/ArtifactList';

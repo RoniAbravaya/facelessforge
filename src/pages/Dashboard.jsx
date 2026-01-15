@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Video, Clock, CheckCircle2, XCircle, Loader2, Play } from 'lucide-react';
-import { createPageUrl } from './utils';
+import { createPageUrl } from '../utils';
 import { motion } from 'framer-motion';
 
 export default function Dashboard() {

@@ -11,7 +11,7 @@ import {
   Loader2, Settings, ArrowLeft, TestTube2 
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { createPageUrl } from './utils';
+import { createPageUrl } from '../utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 
