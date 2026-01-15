@@ -24,7 +24,8 @@ const PROVIDERS = {
   ],
   video: [
     { type: 'video_luma', name: 'Luma AI', description: 'Dream Machine video generation', icon: Video },
-    { type: 'video_runway', name: 'Runway ML', description: 'Gen-2 video generation', icon: Video }
+    { type: 'video_runway', name: 'Runway ML', description: 'Gen-2 video generation', icon: Video },
+    { type: 'video_veo', name: 'Google Veo', description: 'Google Veo video generation', icon: Video }
   ],
   assembly: [
     { type: 'assembly_shotstack', name: 'Shotstack', description: 'Cloud video editing API', icon: Clapperboard },

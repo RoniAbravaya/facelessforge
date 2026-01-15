@@ -74,6 +74,13 @@ Deno.serve(async (req) => {
         });
       }
 
+      case 'video_veo': {
+        return Response.json({ 
+          success: true, 
+          message: 'Google Veo API key saved (connection test requires project ID configuration)' 
+        });
+      }
+
       case 'assembly_shotstack': {
         const response = await fetch('https://api.shotstack.io/v1/sources', {
           headers: {
