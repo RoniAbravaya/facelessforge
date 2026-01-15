@@ -1,41 +1,58 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
 
 async function pollLumaGeneration(generationId, apiKey, maxAttempts = 60) {
+  console.log(`[Luma Polling] Starting polling for generation ${generationId}`);
+  console.log(`[Luma Polling] Max attempts: ${maxAttempts}, 5 seconds per attempt = ${maxAttempts * 5}s max wait`);
+  
   for (let i = 0; i < maxAttempts; i++) {
+    console.log(`[Luma Polling] Attempt ${i + 1}/${maxAttempts} - waiting 5 seconds before poll...`);
     await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
 
-    const response = await fetch(`https://api.lumalabs.ai/dream-machine/v1/generations/${generationId}`, {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`
-      }
-    });
+    try {
+      const pollUrl = `https://api.lumalabs.ai/dream-machine/v1/generations/${generationId}`;
+      console.log(`[Luma Polling] Making request to ${pollUrl}`);
+      
+      const response = await fetch(pollUrl, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`
+        }
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Luma polling error (${response.status}):`, errorText);
-      throw new Error(`Failed to poll Luma generation: ${response.status}`);
-    }
+      console.log(`[Luma Polling] Response status: ${response.status}`);
 
-    const data = await response.json();
-    console.log(`Luma status (attempt ${i + 1}/${maxAttempts}):`, data.state);
-    
-    if (data.state === 'completed') {
-      const videoUrl = data.assets?.video || data.video_url;
-      if (!videoUrl) {
-        console.error('Luma completed but no video URL:', data);
-        throw new Error('Luma generation completed but no video URL found');
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[Luma Polling] Error response (${response.status}):`, errorText);
+        throw new Error(`Failed to poll Luma generation: ${response.status}`);
       }
-      return videoUrl;
-    } else if (data.state === 'failed') {
-      const errorMsg = data.failure_reason || 'Unknown error';
-      console.error('Luma generation failed:', errorMsg);
-      throw new Error(`Luma video generation failed: ${errorMsg}`);
+
+      const data = await response.json();
+      console.log(`[Luma Polling] Full response data:`, JSON.stringify(data, null, 2));
+      console.log(`[Luma Polling] State: ${data.state}`);
+      
+      if (data.state === 'completed') {
+        const videoUrl = data.assets?.video || data.video_url;
+        console.log(`[Luma Polling] Generation completed! Video URL:`, videoUrl);
+        if (!videoUrl) {
+          console.error('Luma completed but no video URL:', data);
+          throw new Error('Luma generation completed but no video URL found');
+        }
+        return videoUrl;
+      } else if (data.state === 'failed') {
+        const errorMsg = data.failure_reason || 'Unknown error';
+        console.error(`[Luma Polling] Generation failed:`, errorMsg);
+        throw new Error(`Luma video generation failed: ${errorMsg}`);
+      }
+      
+      console.log(`[Luma Polling] Still processing... (${data.state})`);
+      // Still processing, continue polling
+    } catch (pollError) {
+      console.error(`[Luma Polling] Error during poll attempt ${i + 1}:`, pollError.message);
+      throw pollError;
     }
-    
-    // Still processing, continue polling
   }
 
-  throw new Error('Luma generation timeout after 5 minutes');
+  throw new Error(`Luma generation timeout after ${maxAttempts * 5}s`);
 }
 
 async function pollRunwayGeneration(taskId, apiKey, maxAttempts = 60) {
