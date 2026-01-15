@@ -162,7 +162,8 @@ async function generateVideo(base44, project, jobId) {
     // Step 3: Generate Voiceover
     let voiceResult;
     if (startStepIndex <= 3) {
-      await updateJobProgress(base44, jobId, projectId, 'running', 'voiceover_generation', 50);
+      currentStep = 'voiceover_generation';
+      await updateJobProgress(base44, jobId, projectId, 'running', currentStep, 50);
       await logEvent(base44, jobId, 'voiceover_generation', 'step_started', 'Generating voiceover');
 
       voiceResult = await base44.asServiceRole.functions.invoke('generateVoiceover', {
