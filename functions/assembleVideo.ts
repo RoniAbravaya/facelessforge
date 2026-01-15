@@ -295,6 +295,12 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error('Assemble video error:', error);
-    return Response.json({ error: error.message }, { status: 500 });
+    console.error('Error details:', error.response?.data || error.toString());
+    return Response.json({ 
+      error: error.message,
+      details: error.response?.data || error.toString(),
+      provider: providerType,
+      clipCount: clipUrls?.length
+    }, { status: 500 });
   }
 });
