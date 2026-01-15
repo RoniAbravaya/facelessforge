@@ -249,7 +249,8 @@ async function generateVideo(base44, project, jobId) {
 
     // Step 5: Assemble Final Video
     if (startStepIndex <= 5) {
-      await updateJobProgress(base44, jobId, projectId, 'running', 'video_assembly', 85);
+      currentStep = 'video_assembly';
+      await updateJobProgress(base44, jobId, projectId, 'running', currentStep, 85);
       await logEvent(base44, jobId, 'video_assembly', 'step_started', 'Assembling final video');
 
       const assemblyResult = await base44.asServiceRole.functions.invoke('assembleVideo', {
