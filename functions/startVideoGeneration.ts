@@ -220,12 +220,14 @@ async function generateVideo(base44, project, jobId) {
         await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', `Generating clip ${i + 1}/${scenes.length}`, 65 + (i / scenes.length) * 15);
 
         try {
-          console.log(`Generating clip ${i + 1}/${scenes.length} with duration: ${scene.duration}s`);
+          // Clamp duration to 4-8 seconds (required by video generation APIs)
+          const clampedDuration = Math.max(4, Math.min(8, Math.round(scene.duration)));
+          console.log(`Generating clip ${i + 1}/${scenes.length} with duration: ${clampedDuration}s (original: ${scene.duration}s)`);
           const clipResult = await base44.asServiceRole.functions.invoke('generateVideoClip', {
             apiKey: videoIntegration.api_key,
             providerType: videoIntegration.provider_type,
             prompt: scene.prompt,
-            duration: scene.duration,
+            duration: clampedDuration,
             aspectRatio: project.aspect_ratio
           });
 
