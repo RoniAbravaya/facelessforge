@@ -87,9 +87,18 @@ Deno.serve(async (req) => {
   try {
     const { apiKey, providerType, prompt, duration, aspectRatio } = await req.json();
 
-    console.log(`Generating video clip with ${providerType}`);
-    console.log(`Prompt: ${prompt}`);
-    console.log(`Duration: ${duration}, Aspect Ratio: ${aspectRatio}`);
+    console.log('=== Generate Video Clip Request ===');
+    console.log(`Provider: ${providerType}`);
+    console.log(`Prompt: ${prompt?.substring(0, 150)}...`);
+    console.log(`Duration: ${duration}s, Aspect Ratio: ${aspectRatio}`);
+    
+    if (!apiKey) {
+      throw new Error(`API key is missing for provider: ${providerType}`);
+    }
+    
+    if (!prompt || prompt.trim().length === 0) {
+      throw new Error('Video prompt is empty');
+    }
 
     if (providerType === 'video_luma') {
       // Start Luma generation
@@ -205,7 +214,13 @@ Deno.serve(async (req) => {
     throw new Error('Unsupported video provider');
 
   } catch (error) {
-    console.error('Generate video clip error:', error);
-    return Response.json({ error: error.message }, { status: 500 });
+    console.error('=== Generate Video Clip Error ===');
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    console.error('Error details:', error);
+    return Response.json({ 
+      error: error.message,
+      details: error.stack 
+    }, { status: 500 });
   }
 });
