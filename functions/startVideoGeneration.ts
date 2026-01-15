@@ -201,7 +201,10 @@ async function generateVideo(base44, project, jobId) {
       const generatedScenes = new Set(existingClips.map(c => c.scene_index));
 
       await updateJobProgress(base44, jobId, projectId, 'running', currentStep, 65);
-      
+
+      console.log(`[Clip Generation] Total scenes: ${scenes.length}, Already generated: ${generatedScenes.size}`);
+      console.log(`[Clip Generation] Scenes array:`, JSON.stringify(scenes.map((s, idx) => ({ idx, duration: s.duration, prompt: s.prompt?.substring(0, 50) }))));
+
       // Only log step_started if this is a fresh start, not a resume
       if (generatedScenes.size === 0) {
         await logEvent(base44, jobId, 'video_clip_generation', 'step_started', `Generating ${scenes.length} video clips`);
@@ -221,8 +224,11 @@ async function generateVideo(base44, project, jobId) {
 
         try {
           // Clamp duration to 4-8 seconds (required by video generation APIs)
-          const clampedDuration = Math.max(4, Math.min(8, Math.round(scene.duration)));
-          console.log(`Generating clip ${i + 1}/${scenes.length} with duration: ${clampedDuration}s (original: ${scene.duration}s)`);
+          const rawDuration = scene.duration;
+          const clampedDuration = Math.max(4, Math.min(8, Math.round(rawDuration)));
+          console.log(`[Clip ${i + 1}/${scenes.length}] Raw duration: ${rawDuration}, Type: ${typeof rawDuration}, Clamped: ${clampedDuration}, IsNumber: ${!isNaN(rawDuration)}`);
+          console.log(`[Clip ${i + 1}] Scene object:`, JSON.stringify({ duration: scene.duration, prompt: scene.prompt?.substring(0, 50) }));
+
           const clipResult = await base44.asServiceRole.functions.invoke('generateVideoClip', {
             apiKey: videoIntegration.api_key,
             providerType: videoIntegration.provider_type,
