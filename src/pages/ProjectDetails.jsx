@@ -1,23 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   ArrowLeft, Download, PlayCircle, Loader2, CheckCircle2,
-  XCircle, Clock, FileText, Mic, Video, Clapperboard, AlertCircle
+  XCircle, Clock, FileText, Mic, Video, Clapperboard, AlertCircle, RefreshCw
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { motion } from 'framer-motion';
+import { toast } from 'sonner';
 import JobTimeline from '../components/project/JobTimeline';
 import ArtifactList from '../components/project/ArtifactList';
 
 export default function ProjectDetails() {
   const urlParams = new URLSearchParams(window.location.search);
   const projectId = urlParams.get('id');
+  const queryClient = useQueryClient();
 
   const { data: project, isLoading: loadingProject } = useQuery({
     queryKey: ['project', projectId],
@@ -27,6 +29,31 @@ export default function ProjectDetails() {
     },
     enabled: !!projectId,
     refetchInterval: (data) => data?.status === 'generating' ? 3000 : false
+  });
+
+  const retryMutation = useMutation({
+    mutationFn: async () => {
+      const newJob = await base44.entities.Job.create({
+        project_id: projectId,
+        status: 'pending',
+        progress: 0
+      });
+
+      await base44.functions.invoke('startVideoGeneration', {
+        projectId,
+        jobId: newJob.id
+      });
+
+      return newJob;
+    },
+    onSuccess: () => {
+      toast.success('Video generation restarted');
+      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['jobs', projectId] });
+    },
+    onError: (error) => {
+      toast.error(`Failed to retry: ${error.message}`);
+    }
   });
 
   const { data: jobs = [] } = useQuery({
@@ -179,9 +206,27 @@ export default function ProjectDetails() {
             <CardContent className="pt-6">
               <div className="flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
-                <div>
+                <div className="flex-1">
                   <h3 className="font-semibold text-red-900 mb-1">Generation Failed</h3>
-                  <p className="text-sm text-red-800">{project.error_message}</p>
+                  <p className="text-sm text-red-800 mb-3">{project.error_message}</p>
+                  <Button
+                    size="sm"
+                    onClick={() => retryMutation.mutate()}
+                    disabled={retryMutation.isPending}
+                    className="bg-red-600 hover:bg-red-700"
+                  >
+                    {retryMutation.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Retrying...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        Retry Generation
+                      </>
+                    )}
+                  </Button>
                 </div>
               </div>
             </CardContent>
