@@ -103,7 +103,8 @@ async function generateVideo(base44, project, jobId) {
     // Step 1: Generate Script
     let script;
     if (startStepIndex <= 1) {
-      await updateJobProgress(base44, jobId, projectId, 'running', 'script_generation', 15);
+      currentStep = 'script_generation';
+      await updateJobProgress(base44, jobId, projectId, 'running', currentStep, 15);
       await logEvent(base44, jobId, 'script_generation', 'step_started', 'Generating script with LLM');
 
       const scriptResult = await base44.asServiceRole.functions.invoke('generateScript', {
