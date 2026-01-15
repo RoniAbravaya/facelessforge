@@ -213,21 +213,27 @@ Deno.serve(async (req) => {
 
     } else if (providerType === 'video_veo') {
       // Start Google Veo generation via Gemini API
+      const finalDuration = parseInt(durationNum, 10);
+      console.log(`[Veo Request] Final duration: ${finalDuration}, Type: ${typeof finalDuration}, IsValid: ${finalDuration >= 4 && finalDuration <= 8}`);
+
+      const requestBody = {
+        instances: [{
+          prompt: prompt
+        }],
+        parameters: {
+          aspectRatio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '16:9' ? '16:9' : '16:9',
+          durationSeconds: finalDuration
+        }
+      };
+      console.log(`[Veo Request Body]`, JSON.stringify(requestBody));
+
       const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning', {
         method: 'POST',
         headers: {
           'x-goog-api-key': apiKey,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          instances: [{
-            prompt: prompt
-          }],
-          parameters: {
-            aspectRatio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '16:9' ? '16:9' : '16:9',
-            durationSeconds: parseInt(durationNum, 10)
-          }
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
