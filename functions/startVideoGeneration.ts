@@ -65,6 +65,8 @@ async function generateVideo(base44, project, jobId) {
   let job = await base44.asServiceRole.entities.Job.filter({ id: jobId });
   job = job[0] || {};
 
+  let currentStep = 'initialization'; // Track current step for proper error handling
+
   try {
     // Determine if this is a retry and what step to start from
     const steps = ['initialization', 'script_generation', 'scene_planning', 'voiceover_generation', 'video_clip_generation', 'video_assembly', 'completed'];
