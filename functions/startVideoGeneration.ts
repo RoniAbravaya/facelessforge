@@ -212,15 +212,18 @@ async function generateVideo(base44, project, jobId) {
 
       for (let i = 0; i < scenes.length; i++) {
         const scene = scenes[i];
+        const progressPercent = 65 + Math.floor((i / scenes.length) * 15);
 
         if (generatedScenes.has(i)) {
           const clip = existingClips.find(c => c.scene_index === i);
           clipUrls.push(clip.file_url);
-          console.log(`Skipping clip ${i + 1} - already generated`);
+          console.log(`Skipping clip ${i + 1}/${scenes.length} - already generated`);
+          await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', `Skipped clip ${i + 1}/${scenes.length}`, progressPercent);
           continue;
         }
 
-        await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', `Generating clip ${i + 1}/${scenes.length}`, 65 + (i / scenes.length) * 15);
+        console.log(`[Clip Generation] Starting clip ${i + 1}/${scenes.length}`);
+        await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', `Generating clip ${i + 1}/${scenes.length}`, progressPercent);
 
         try {
           // Clamp duration to 4-8 seconds (required by video generation APIs)
