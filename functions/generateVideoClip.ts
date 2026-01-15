@@ -75,42 +75,7 @@ async function pollRunwayGeneration(taskId, apiKey, maxAttempts = 60) {
   throw new Error('Runway generation timeout after 5 minutes');
 }
 
-async function pollVeoGeneration(operationName, apiKey, maxAttempts = 60) {
-  for (let i = 0; i < maxAttempts; i++) {
-    await new Promise(resolve => setTimeout(resolve, 5000));
 
-    const response = await fetch(`https://aiplatform.googleapis.com/v1/${operationName}`, {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Veo polling error (${response.status}):`, errorText);
-      throw new Error(`Failed to poll Veo generation: ${response.status}`);
-    }
-
-    const data = await response.json();
-    console.log(`Veo status (attempt ${i + 1}/${maxAttempts}):`, data.done ? 'done' : 'processing');
-    
-    if (data.done) {
-      if (data.error) {
-        console.error('Veo generation failed:', data.error);
-        throw new Error(`Veo generation failed: ${data.error.message}`);
-      }
-      const videoUrl = data.response?.generatedSamples?.[0]?.video?.uri || data.response?.videoUri;
-      if (!videoUrl) {
-        console.error('Veo completed but no video URL:', data);
-        throw new Error('Veo generation completed but no video URL found');
-      }
-      return videoUrl;
-    }
-  }
-
-  throw new Error('Veo generation timeout after 5 minutes');
-}
 
 Deno.serve(async (req) => {
   try {
