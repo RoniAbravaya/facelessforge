@@ -146,6 +146,7 @@ Deno.serve(async (req) => {
       const lumaBody = {
         model: 'ray-2',
         prompt,
+        duration: `${durationNum}s`,
         aspect_ratio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '16:9' ? '16:9' : '1:1',
         loop: false
       };
