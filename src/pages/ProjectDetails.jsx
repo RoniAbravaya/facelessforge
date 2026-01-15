@@ -281,6 +281,28 @@ export default function ProjectDetails() {
           </Card>
         )}
 
+        {/* Fetched Videos Display */}
+        {generationResults && (
+          <Card className="border-blue-200 bg-blue-50 mb-8">
+            <CardContent className="pt-6">
+              <h3 className="font-semibold text-blue-900 mb-3">Found {generationResults.completed} Videos</h3>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {generationResults.generations.map((gen) => (
+                  <div key={gen.id} className="text-sm bg-white p-2 rounded border border-blue-200">
+                    <p className="font-mono text-xs text-blue-600 mb-1">{gen.id}</p>
+                    <p className="text-blue-700 truncate">{gen.prompt}</p>
+                    {gen.videoUrl && (
+                      <a href={gen.videoUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline text-xs">
+                        View Video
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Final Video */}
         {finalVideo && (
           <Card className="border-0 shadow-lg mb-8 overflow-hidden">
