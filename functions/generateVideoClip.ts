@@ -169,8 +169,45 @@ Deno.serve(async (req) => {
       return Response.json({ videoUrl });
 
     } else if (providerType === 'video_veo') {
-      // Google Veo requires GCP project ID in additional_config
-      throw new Error('Google Veo is not fully configured. Please use Luma AI or Runway ML instead. (Veo requires Google Cloud Project ID setup)');
+      // Start Google Veo generation via Gemini API
+      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning', {
+        method: 'POST',
+        headers: {
+          'x-goog-api-key': apiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          instances: [{
+            prompt: prompt
+          }],
+          parameters: {
+            aspectRatio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '16:9' ? '16:9' : '16:9',
+            durationSeconds: Math.min(duration, 8).toString()
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Veo API error (${response.status}):`, errorText);
+        try {
+          const error = JSON.parse(errorText);
+          throw new Error(`Veo API error: ${error.error?.message || error.message || errorText}`);
+        } catch {
+          throw new Error(`Veo API error (${response.status}): ${errorText}`);
+        }
+      }
+
+      const data = await response.json();
+      const operationName = data.name;
+
+      console.log(`Started Veo generation: ${operationName}`);
+
+      // Poll for completion
+      const videoUrl = await pollVeoGeneration(operationName, apiKey);
+
+      console.log(`Veo generation completed: ${videoUrl}`);
+      return Response.json({ videoUrl });
     }
 
     throw new Error('Unsupported video provider');
