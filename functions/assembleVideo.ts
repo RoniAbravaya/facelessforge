@@ -2,6 +2,13 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
 
 // Shotstack Assembly
 async function assembleShotstack(apiKey, clipUrls, audioUrl, scenes, aspectRatio, title) {
+  // Build size object based on aspect ratio
+  const size = aspectRatio === '9:16' 
+    ? { width: 1080, height: 1920 } 
+    : aspectRatio === '16:9' 
+    ? { width: 1920, height: 1080 } 
+    : { width: 1080, height: 1080 };
+
   const timeline = {
     soundtrack: {
       src: audioUrl,
@@ -20,8 +27,7 @@ async function assembleShotstack(apiKey, clipUrls, audioUrl, scenes, aspectRatio
             },
             start: startTime,
             length: scene.duration,
-            fit: 'cover',
-            scale: 1
+            fit: 'cover'
           };
         })
       }
@@ -30,9 +36,8 @@ async function assembleShotstack(apiKey, clipUrls, audioUrl, scenes, aspectRatio
 
   const output = {
     format: 'mp4',
-    resolution: aspectRatio === '9:16' ? '1080x1920' : aspectRatio === '16:9' ? '1920x1080' : '1080x1080',
-    fps: 30,
-    quality: 'high'
+    size: size,
+    fps: 30
   };
 
   // Submit render
