@@ -11,21 +11,31 @@ async function pollLumaGeneration(generationId, apiKey, maxAttempts = 60) {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to poll Luma generation status');
+      const errorText = await response.text();
+      console.error(`Luma polling error (${response.status}):`, errorText);
+      throw new Error(`Failed to poll Luma generation: ${response.status}`);
     }
 
     const data = await response.json();
+    console.log(`Luma status (attempt ${i + 1}/${maxAttempts}):`, data.state);
     
     if (data.state === 'completed') {
-      return data.assets?.video || data.video_url;
+      const videoUrl = data.assets?.video || data.video_url;
+      if (!videoUrl) {
+        console.error('Luma completed but no video URL:', data);
+        throw new Error('Luma generation completed but no video URL found');
+      }
+      return videoUrl;
     } else if (data.state === 'failed') {
-      throw new Error('Luma video generation failed');
+      const errorMsg = data.failure_reason || 'Unknown error';
+      console.error('Luma generation failed:', errorMsg);
+      throw new Error(`Luma video generation failed: ${errorMsg}`);
     }
     
     // Still processing, continue polling
   }
 
-  throw new Error('Luma generation timeout');
+  throw new Error('Luma generation timeout after 5 minutes');
 }
 
 async function pollRunwayGeneration(taskId, apiKey, maxAttempts = 60) {
@@ -40,19 +50,29 @@ async function pollRunwayGeneration(taskId, apiKey, maxAttempts = 60) {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to poll Runway generation status');
+      const errorText = await response.text();
+      console.error(`Runway polling error (${response.status}):`, errorText);
+      throw new Error(`Failed to poll Runway generation: ${response.status}`);
     }
 
     const data = await response.json();
+    console.log(`Runway status (attempt ${i + 1}/${maxAttempts}):`, data.status);
     
     if (data.status === 'SUCCEEDED') {
-      return data.output?.[0] || data.artifacts?.[0]?.url;
+      const videoUrl = data.output?.[0] || data.artifacts?.[0]?.url;
+      if (!videoUrl) {
+        console.error('Runway completed but no video URL:', data);
+        throw new Error('Runway generation completed but no video URL found');
+      }
+      return videoUrl;
     } else if (data.status === 'FAILED') {
-      throw new Error('Runway video generation failed');
+      const errorMsg = data.failure || data.error || 'Unknown error';
+      console.error('Runway generation failed:', errorMsg);
+      throw new Error(`Runway video generation failed: ${errorMsg}`);
     }
   }
 
-  throw new Error('Runway generation timeout');
+  throw new Error('Runway generation timeout after 5 minutes');
 }
 
 async function pollVeoGeneration(operationName, apiKey, maxAttempts = 60) {
@@ -67,20 +87,29 @@ async function pollVeoGeneration(operationName, apiKey, maxAttempts = 60) {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to poll Veo generation status');
+      const errorText = await response.text();
+      console.error(`Veo polling error (${response.status}):`, errorText);
+      throw new Error(`Failed to poll Veo generation: ${response.status}`);
     }
 
     const data = await response.json();
+    console.log(`Veo status (attempt ${i + 1}/${maxAttempts}):`, data.done ? 'done' : 'processing');
     
     if (data.done) {
       if (data.error) {
+        console.error('Veo generation failed:', data.error);
         throw new Error(`Veo generation failed: ${data.error.message}`);
       }
-      return data.response?.generatedSamples?.[0]?.video?.uri || data.response?.videoUri;
+      const videoUrl = data.response?.generatedSamples?.[0]?.video?.uri || data.response?.videoUri;
+      if (!videoUrl) {
+        console.error('Veo completed but no video URL:', data);
+        throw new Error('Veo generation completed but no video URL found');
+      }
+      return videoUrl;
     }
   }
 
-  throw new Error('Veo generation timeout');
+  throw new Error('Veo generation timeout after 5 minutes');
 }
 
 Deno.serve(async (req) => {
@@ -134,6 +163,7 @@ Deno.serve(async (req) => {
       // Poll for completion
       const videoUrl = await pollLumaGeneration(generationId, apiKey);
 
+      console.log(`Luma generation completed: ${videoUrl}`);
       return Response.json({ videoUrl });
 
     } else if (providerType === 'video_runway') {
@@ -170,6 +200,7 @@ Deno.serve(async (req) => {
       // Poll for completion
       const videoUrl = await pollRunwayGeneration(taskId, apiKey);
 
+      console.log(`Runway generation completed: ${videoUrl}`);
       return Response.json({ videoUrl });
 
     } else if (providerType === 'video_veo') {
@@ -208,6 +239,7 @@ Deno.serve(async (req) => {
       // Poll for completion
       const videoUrl = await pollVeoGeneration(operationName, apiKey);
 
+      console.log(`Veo generation completed: ${videoUrl}`);
       return Response.json({ videoUrl });
     }
 
