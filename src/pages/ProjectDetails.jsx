@@ -33,8 +33,7 @@ export default function ProjectDetails() {
     queryKey: ['jobs', projectId],
     queryFn: () => base44.entities.Job.filter({ project_id: projectId }, '-created_date'),
     enabled: !!projectId,
-    refetchInterval: (data) => 
-      data?.some(j => j.status === 'running' || j.status === 'pending') ? 3000 : false
+    refetchInterval: 3000
   });
 
   const { data: artifacts = [] } = useQuery({
@@ -47,10 +46,7 @@ export default function ProjectDetails() {
     queryKey: ['events', jobs[0]?.id],
     queryFn: () => base44.entities.JobEvent.filter({ job_id: jobs[0]?.id }, 'created_date'),
     enabled: !!jobs[0]?.id,
-    refetchInterval: (data, query) => {
-      const job = jobs[0];
-      return job?.status === 'running' || job?.status === 'pending' ? 2000 : false;
-    }
+    refetchInterval: 2000
   });
 
   // Real-time updates using Base44 subscriptions
