@@ -55,6 +55,34 @@ async function pollRunwayGeneration(taskId, apiKey, maxAttempts = 60) {
   throw new Error('Runway generation timeout');
 }
 
+async function pollVeoGeneration(operationName, apiKey, maxAttempts = 60) {
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    const response = await fetch(`https://aiplatform.googleapis.com/v1/${operationName}`, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to poll Veo generation status');
+    }
+
+    const data = await response.json();
+    
+    if (data.done) {
+      if (data.error) {
+        throw new Error(`Veo generation failed: ${data.error.message}`);
+      }
+      return data.response?.generatedSamples?.[0]?.video?.uri || data.response?.videoUri;
+    }
+  }
+
+  throw new Error('Veo generation timeout');
+}
+
 Deno.serve(async (req) => {
   try {
     const { apiKey, providerType, prompt, duration, aspectRatio } = await req.json();
@@ -116,6 +144,38 @@ Deno.serve(async (req) => {
 
       // Poll for completion
       const videoUrl = await pollRunwayGeneration(taskId, apiKey);
+
+      return Response.json({ videoUrl });
+
+    } else if (providerType === 'video_veo') {
+      // Start Google Veo generation
+      const response = await fetch('https://aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/us-central1/publishers/google/models/veo-001:generateVideo', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          prompt: prompt,
+          videoConfig: {
+            duration: `${Math.min(duration, 8)}s`,
+            aspectRatio: aspectRatio === '9:16' ? 'PORTRAIT' : aspectRatio === '16:9' ? 'LANDSCAPE' : 'SQUARE'
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error?.message || 'Veo API error');
+      }
+
+      const data = await response.json();
+      const operationName = data.name;
+
+      console.log(`Started Veo generation: ${operationName}`);
+
+      // Poll for completion
+      const videoUrl = await pollVeoGeneration(operationName, apiKey);
 
       return Response.json({ videoUrl });
     }
