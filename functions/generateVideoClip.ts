@@ -138,17 +138,33 @@ Deno.serve(async (req) => {
     }
 
     if (providerType === 'video_luma') {
+      console.log('=== LUMA VIDEO GENERATION START ===');
+      console.log(`Full API key: ${apiKey}`);
+      console.log(`API key type: ${typeof apiKey}`);
+      console.log(`API key length: ${apiKey?.length}`);
+
       // Start Luma generation
       const lumaHeaders = {
         'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'accept': 'application/json'
       };
+
+      console.log('Building Luma request body...');
       const lumaBody = {
-        prompt,
         model: 'ray-2',
+        prompt: prompt,
         duration: `${durationNum}s`,
         resolution: '720p'
       };
+
+      console.log(`Luma body keys:`, Object.keys(lumaBody));
+      console.log(`Luma body types:`, {
+        model: typeof lumaBody.model,
+        prompt: typeof lumaBody.prompt,
+        duration: typeof lumaBody.duration,
+        resolution: typeof lumaBody.resolution
+      });
 
       // Add optional parameters if specified
       if (aspectRatio === '16:9' || aspectRatio === '9:16') {
