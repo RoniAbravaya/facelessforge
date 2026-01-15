@@ -139,26 +139,35 @@ Deno.serve(async (req) => {
 
     if (providerType === 'video_luma') {
       // Start Luma generation
+      const lumaHeaders = {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      };
+      const lumaBody = {
+        model: 'ray-3',
+        prompt,
+        aspect_ratio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '16:9' ? '16:9' : '1:1',
+        loop: false
+      };
+
+      console.log(`[Luma Request] Headers:`, JSON.stringify({ Authorization: '***REDACTED***', 'Content-Type': 'application/json' }));
+      console.log(`[Luma Request] Body:`, JSON.stringify(lumaBody));
+      console.log(`[Luma Request] API Key length: ${apiKey?.length}, First 10 chars: ${apiKey?.substring(0, 10)}...`);
+
       const response = await fetch('https://api.lumalabs.ai/dream-machine/v1/generations', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'ray-3',
-          prompt,
-          aspect_ratio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '16:9' ? '16:9' : '1:1',
-          loop: false
-        })
+        headers: lumaHeaders,
+        body: JSON.stringify(lumaBody)
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`Luma API error (${response.status}):`, errorText);
+        console.error(`[Luma API Error] Status: ${response.status}`);
+        console.error(`[Luma API Error] Response:`, errorText);
+        console.error(`[Luma API Error] Headers sent:`, JSON.stringify(lumaHeaders));
         try {
           const error = JSON.parse(errorText);
-          throw new Error(`Luma API error: ${error.error?.message || error.message || errorText}`);
+          throw new Error(`Luma API error: ${error.error?.message || error.message || error.detail || errorText}`);
         } catch {
           throw new Error(`Luma API error (${response.status}): ${errorText}`);
         }
