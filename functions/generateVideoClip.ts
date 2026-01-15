@@ -144,7 +144,7 @@ Deno.serve(async (req) => {
         'Content-Type': 'application/json'
       };
       const lumaBody = {
-        model: 'ray-3',
+        model: 'ray-2',
         prompt,
         aspect_ratio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '16:9' ? '16:9' : '1:1',
         loop: false
