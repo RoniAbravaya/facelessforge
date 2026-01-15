@@ -195,7 +195,11 @@ async function generateVideo(base44, project, jobId) {
       const generatedScenes = new Set(existingClips.map(c => c.scene_index));
 
       await updateJobProgress(base44, jobId, projectId, 'running', currentStep, 65);
-      await logEvent(base44, jobId, 'video_clip_generation', 'step_started', `Generating ${scenes.length} video clips`);
+      
+      // Only log step_started if this is a fresh start, not a resume
+      if (generatedScenes.size === 0) {
+        await logEvent(base44, jobId, 'video_clip_generation', 'step_started', `Generating ${scenes.length} video clips`);
+      }
 
       for (let i = 0; i < scenes.length; i++) {
         const scene = scenes[i];
@@ -210,6 +214,7 @@ async function generateVideo(base44, project, jobId) {
         await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', `Generating clip ${i + 1}/${scenes.length}`, 65 + (i / scenes.length) * 15);
 
         try {
+          console.log(`Generating clip ${i + 1}/${scenes.length} with duration: ${scene.duration}s`);
           const clipResult = await base44.asServiceRole.functions.invoke('generateVideoClip', {
             apiKey: videoIntegration.api_key,
             providerType: videoIntegration.provider_type,
