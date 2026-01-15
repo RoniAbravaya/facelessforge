@@ -154,25 +154,43 @@ async function generateVideo(base44, project, jobId) {
       const scene = scenes[i];
       await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', `Generating clip ${i + 1}/${scenes.length}`, 65 + (i / scenes.length) * 15);
 
-      const clipResult = await base44.asServiceRole.functions.invoke('generateVideoClip', {
-        apiKey: videoIntegration.api_key,
-        providerType: videoIntegration.provider_type,
-        prompt: scene.prompt,
-        duration: scene.duration,
-        aspectRatio: project.aspect_ratio
-      });
+      try {
+        console.log(`Calling generateVideoClip for scene ${i + 1}`);
+        console.log(`Provider: ${videoIntegration.provider_type}`);
+        console.log(`Prompt: ${scene.prompt?.substring(0, 100)}...`);
+        console.log(`Duration: ${scene.duration}, AspectRatio: ${project.aspect_ratio}`);
 
-      clipUrls.push(clipResult.data.videoUrl);
+        const clipResult = await base44.asServiceRole.functions.invoke('generateVideoClip', {
+          apiKey: videoIntegration.api_key,
+          providerType: videoIntegration.provider_type,
+          prompt: scene.prompt,
+          duration: scene.duration,
+          aspectRatio: project.aspect_ratio
+        });
 
-      await base44.asServiceRole.entities.Artifact.create({
-        job_id: jobId,
-        project_id: projectId,
-        artifact_type: 'video_clip',
-        file_url: clipResult.data.videoUrl,
-        scene_index: i,
-        duration: scene.duration,
-        metadata: { prompt: scene.prompt }
-      });
+        console.log(`Clip ${i + 1} result:`, clipResult.data);
+
+        if (!clipResult.data.videoUrl) {
+          throw new Error(`No video URL returned for clip ${i + 1}`);
+        }
+
+        clipUrls.push(clipResult.data.videoUrl);
+
+        await base44.asServiceRole.entities.Artifact.create({
+          job_id: jobId,
+          project_id: projectId,
+          artifact_type: 'video_clip',
+          file_url: clipResult.data.videoUrl,
+          scene_index: i,
+          duration: scene.duration,
+          metadata: { prompt: scene.prompt }
+        });
+      } catch (clipError) {
+        console.error(`Failed to generate clip ${i + 1}:`, clipError);
+        console.error('Error response:', clipError.response?.data);
+        console.error('Error status:', clipError.response?.status);
+        throw new Error(`Video clip ${i + 1} generation failed: ${clipError.response?.data?.error || clipError.message}`);
+      }
     }
 
     await logEvent(base44, jobId, 'video_clip_generation', 'step_finished', 'All video clips generated', 80);
