@@ -1,14 +1,14 @@
+import CreateProject from './pages/CreateProject';
 import Dashboard from './pages/Dashboard';
 import Integrations from './pages/Integrations';
-import CreateProject from './pages/CreateProject';
 import ProjectDetails from './pages/ProjectDetails';
 import __Layout from './Layout.jsx';
 
 
 export const PAGES = {
+    "CreateProject": CreateProject,
     "Dashboard": Dashboard,
     "Integrations": Integrations,
-    "CreateProject": CreateProject,
     "ProjectDetails": ProjectDetails,
 }
 

@@ -33,21 +33,30 @@ export default function ProjectDetails() {
 
   const retryMutation = useMutation({
     mutationFn: async () => {
-      const newJob = await base44.entities.Job.create({
-        project_id: projectId,
-        status: 'pending',
-        progress: 0
+      const failedJob = latestJob;
+      
+      // Reset job to running state at the failed step
+      await base44.entities.Job.update(failedJob.id, {
+        status: 'running',
+        error_message: null
       });
 
+      // Also clear project error
+      await base44.entities.Project.update(projectId, {
+        status: 'generating',
+        error_message: null
+      });
+
+      // Call startVideoGeneration with same jobId to resume from failed step
       await base44.functions.invoke('startVideoGeneration', {
         projectId,
-        jobId: newJob.id
+        jobId: failedJob.id
       });
 
-      return newJob;
+      return failedJob;
     },
     onSuccess: () => {
-      toast.success('Video generation restarted');
+      toast.success('Retrying from failed step');
       queryClient.invalidateQueries({ queryKey: ['project', projectId] });
       queryClient.invalidateQueries({ queryKey: ['jobs', projectId] });
     },
