@@ -236,24 +236,45 @@ export default function ProjectDetails() {
                 <div className="flex-1">
                   <h3 className="font-semibold text-red-900 mb-1">Generation Failed</h3>
                   <p className="text-sm text-red-800 mb-3">{project.error_message}</p>
-                  <Button
-                    size="sm"
-                    onClick={() => retryMutation.mutate()}
-                    disabled={retryMutation.isPending}
-                    className="bg-red-600 hover:bg-red-700"
-                  >
-                    {retryMutation.isPending ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Retrying...
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="w-4 h-4 mr-2" />
-                        Retry Generation
-                      </>
-                    )}
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => retryMutation.mutate()}
+                      disabled={retryMutation.isPending}
+                      className="bg-red-600 hover:bg-red-700"
+                    >
+                      {retryMutation.isPending ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Retrying...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Retry Generation
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleFetchGenerations}
+                      disabled={fetchingGenerations}
+                      variant="outline"
+                      className="text-red-600 border-red-200 hover:bg-red-100"
+                    >
+                      {fetchingGenerations ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Fetching...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4 mr-2" />
+                          Fetch Videos
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>
