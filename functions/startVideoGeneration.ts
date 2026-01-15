@@ -62,10 +62,23 @@ Deno.serve(async (req) => {
 
 async function generateVideo(base44, project, jobId) {
   const projectId = project.id;
+  let job = await base44.asServiceRole.entities.Job.filter({ id: jobId });
+  job = job[0] || {};
 
   try {
-    await updateJobProgress(base44, jobId, projectId, 'running', 'initialization', 0);
-    await logEvent(base44, jobId, 'initialization', 'step_started', 'Starting video generation pipeline');
+    // Determine if this is a retry and what step to start from
+    const steps = ['initialization', 'script_generation', 'scene_planning', 'voiceover_generation', 'video_clip_generation', 'video_assembly', 'completed'];
+    let startStepIndex = 0;
+
+    if (job.status === 'failed' || job.status === 'running') {
+      const failedStepIndex = steps.indexOf(job.current_step);
+      startStepIndex = failedStepIndex >= 0 ? failedStepIndex : 0;
+      console.log(`Resuming from step: ${job.current_step} (index ${startStepIndex})`);
+      await logEvent(base44, jobId, 'initialization', 'step_started', `Resuming video generation from step: ${job.current_step}`);
+    } else {
+      await updateJobProgress(base44, jobId, projectId, 'running', 'initialization', 0);
+      await logEvent(base44, jobId, 'initialization', 'step_started', 'Starting video generation pipeline');
+    }
 
     // Get integrations
     const allIntegrations = await base44.asServiceRole.entities.Integration.list();
@@ -80,144 +93,180 @@ async function generateVideo(base44, project, jobId) {
       throw new Error('Missing required integrations');
     }
 
-    await logEvent(base44, jobId, 'initialization', 'step_finished', 'All integrations loaded', 10);
-
-    // Step 1: Generate Script
-    await updateJobProgress(base44, jobId, projectId, 'running', 'script_generation', 15);
-    await logEvent(base44, jobId, 'script_generation', 'step_started', 'Generating script with LLM');
-
-    const scriptResult = await base44.asServiceRole.functions.invoke('generateScript', {
-      apiKey: llmIntegration.api_key,
-      topic: project.topic,
-      duration: project.duration,
-      language: project.language,
-      style: project.style
-    });
-
-    const script = scriptResult.data.script;
-    await base44.asServiceRole.entities.Artifact.create({
-      job_id: jobId,
-      project_id: projectId,
-      artifact_type: 'script',
-      metadata: { script }
-    });
-
-    await logEvent(base44, jobId, 'script_generation', 'step_finished', 'Script generated successfully', 30, { wordCount: script.split(' ').length });
-
-    // Step 2: Generate Scene Plan
-    await updateJobProgress(base44, jobId, projectId, 'running', 'scene_planning', 35);
-    await logEvent(base44, jobId, 'scene_planning', 'step_started', 'Creating scene breakdown');
-
-    const scenePlanResult = await base44.asServiceRole.functions.invoke('generateScenePlan', {
-      apiKey: llmIntegration.api_key,
-      script,
-      duration: project.duration,
-      style: project.style
-    });
-
-    const scenes = scenePlanResult.data.scenes;
-    await base44.asServiceRole.entities.Artifact.create({
-      job_id: jobId,
-      project_id: projectId,
-      artifact_type: 'scene_plan',
-      metadata: { scenes }
-    });
-
-    await logEvent(base44, jobId, 'scene_planning', 'step_finished', `Scene plan created with ${scenes.length} scenes`, 45, { sceneCount: scenes.length });
-
-    // Step 3: Generate Voiceover
-    await updateJobProgress(base44, jobId, projectId, 'running', 'voiceover_generation', 50);
-    await logEvent(base44, jobId, 'voiceover_generation', 'step_started', 'Generating voiceover');
-
-    const voiceResult = await base44.asServiceRole.functions.invoke('generateVoiceover', {
-      apiKey: voiceIntegration.api_key,
-      providerType: voiceIntegration.provider_type,
-      text: script,
-      language: project.language
-    });
-
-    await base44.asServiceRole.entities.Artifact.create({
-      job_id: jobId,
-      project_id: projectId,
-      artifact_type: 'voiceover',
-      file_url: voiceResult.data.audioUrl
-    });
-
-    await logEvent(base44, jobId, 'voiceover_generation', 'step_finished', 'Voiceover generated', 60);
-
-    // Step 4: Generate Video Clips
-    await updateJobProgress(base44, jobId, projectId, 'running', 'video_clip_generation', 65);
-    await logEvent(base44, jobId, 'video_clip_generation', 'step_started', `Generating ${scenes.length} video clips`);
-
-    const clipUrls = [];
-    for (let i = 0; i < scenes.length; i++) {
-      const scene = scenes[i];
-      await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', `Generating clip ${i + 1}/${scenes.length}`, 65 + (i / scenes.length) * 15);
-
-      try {
-        console.log(`Calling generateVideoClip for scene ${i + 1}`);
-        console.log(`Provider: ${videoIntegration.provider_type}`);
-        console.log(`Prompt: ${scene.prompt?.substring(0, 100)}...`);
-        console.log(`Duration: ${scene.duration}, AspectRatio: ${project.aspect_ratio}`);
-
-        const clipResult = await base44.asServiceRole.functions.invoke('generateVideoClip', {
-          apiKey: videoIntegration.api_key,
-          providerType: videoIntegration.provider_type,
-          prompt: scene.prompt,
-          duration: scene.duration,
-          aspectRatio: project.aspect_ratio
-        });
-
-        console.log(`Clip ${i + 1} result:`, clipResult.data);
-
-        if (!clipResult.data.videoUrl) {
-          throw new Error(`No video URL returned for clip ${i + 1}`);
-        }
-
-        clipUrls.push(clipResult.data.videoUrl);
-
-        await base44.asServiceRole.entities.Artifact.create({
-          job_id: jobId,
-          project_id: projectId,
-          artifact_type: 'video_clip',
-          file_url: clipResult.data.videoUrl,
-          scene_index: i,
-          duration: scene.duration,
-          metadata: { prompt: scene.prompt }
-        });
-      } catch (clipError) {
-        console.error(`Failed to generate clip ${i + 1}:`, clipError);
-        console.error('Error response:', clipError.response?.data);
-        console.error('Error status:', clipError.response?.status);
-        throw new Error(`Video clip ${i + 1} generation failed: ${clipError.response?.data?.error || clipError.message}`);
-      }
+    if (startStepIndex <= 0) {
+      await logEvent(base44, jobId, 'initialization', 'step_finished', 'All integrations loaded', 10);
     }
 
-    await logEvent(base44, jobId, 'video_clip_generation', 'step_finished', 'All video clips generated', 80);
+    // Step 1: Generate Script
+    let script;
+    if (startStepIndex <= 1) {
+      await updateJobProgress(base44, jobId, projectId, 'running', 'script_generation', 15);
+      await logEvent(base44, jobId, 'script_generation', 'step_started', 'Generating script with LLM');
+
+      const scriptResult = await base44.asServiceRole.functions.invoke('generateScript', {
+        apiKey: llmIntegration.api_key,
+        topic: project.topic,
+        duration: project.duration,
+        language: project.language,
+        style: project.style
+      });
+
+      script = scriptResult.data.script;
+      await base44.asServiceRole.entities.Artifact.create({
+        job_id: jobId,
+        project_id: projectId,
+        artifact_type: 'script',
+        metadata: { script }
+      });
+
+      await logEvent(base44, jobId, 'script_generation', 'step_finished', 'Script generated successfully', 30, { wordCount: script.split(' ').length });
+    } else {
+      const scriptArtifacts = await base44.asServiceRole.entities.Artifact.filter({ job_id: jobId, artifact_type: 'script' });
+      script = scriptArtifacts[0]?.metadata?.script;
+      console.log('Skipping script generation - already completed');
+    }
+
+    // Step 2: Generate Scene Plan
+    let scenes;
+    if (startStepIndex <= 2) {
+      await updateJobProgress(base44, jobId, projectId, 'running', 'scene_planning', 35);
+      await logEvent(base44, jobId, 'scene_planning', 'step_started', 'Creating scene breakdown');
+
+      const scenePlanResult = await base44.asServiceRole.functions.invoke('generateScenePlan', {
+        apiKey: llmIntegration.api_key,
+        script,
+        duration: project.duration,
+        style: project.style
+      });
+
+      scenes = scenePlanResult.data.scenes;
+      await base44.asServiceRole.entities.Artifact.create({
+        job_id: jobId,
+        project_id: projectId,
+        artifact_type: 'scene_plan',
+        metadata: { scenes }
+      });
+
+      await logEvent(base44, jobId, 'scene_planning', 'step_finished', `Scene plan created with ${scenes.length} scenes`, 45, { sceneCount: scenes.length });
+    } else {
+      const sceneArtifacts = await base44.asServiceRole.entities.Artifact.filter({ job_id: jobId, artifact_type: 'scene_plan' });
+      scenes = sceneArtifacts[0]?.metadata?.scenes;
+      console.log('Skipping scene planning - already completed');
+    }
+
+    // Step 3: Generate Voiceover
+    let voiceResult;
+    if (startStepIndex <= 3) {
+      await updateJobProgress(base44, jobId, projectId, 'running', 'voiceover_generation', 50);
+      await logEvent(base44, jobId, 'voiceover_generation', 'step_started', 'Generating voiceover');
+
+      voiceResult = await base44.asServiceRole.functions.invoke('generateVoiceover', {
+        apiKey: voiceIntegration.api_key,
+        providerType: voiceIntegration.provider_type,
+        text: script,
+        language: project.language
+      });
+
+      await base44.asServiceRole.entities.Artifact.create({
+        job_id: jobId,
+        project_id: projectId,
+        artifact_type: 'voiceover',
+        file_url: voiceResult.data.audioUrl
+      });
+
+      await logEvent(base44, jobId, 'voiceover_generation', 'step_finished', 'Voiceover generated', 60);
+    } else {
+      const voiceArtifacts = await base44.asServiceRole.entities.Artifact.filter({ job_id: jobId, artifact_type: 'voiceover' });
+      voiceResult = { data: { audioUrl: voiceArtifacts[0]?.file_url } };
+      console.log('Skipping voiceover generation - already completed');
+    }
+
+    // Step 4: Generate Video Clips
+    let clipUrls = [];
+    if (startStepIndex <= 4) {
+      // Get already generated clips
+      const existingClips = await base44.asServiceRole.entities.Artifact.filter({ job_id: jobId, artifact_type: 'video_clip' });
+      const generatedScenes = new Set(existingClips.map(c => c.scene_index));
+
+      await updateJobProgress(base44, jobId, projectId, 'running', 'video_clip_generation', 65);
+      await logEvent(base44, jobId, 'video_clip_generation', 'step_started', `Generating ${scenes.length} video clips`);
+
+      for (let i = 0; i < scenes.length; i++) {
+        const scene = scenes[i];
+
+        if (generatedScenes.has(i)) {
+          const clip = existingClips.find(c => c.scene_index === i);
+          clipUrls.push(clip.file_url);
+          console.log(`Skipping clip ${i + 1} - already generated`);
+          continue;
+        }
+
+        await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', `Generating clip ${i + 1}/${scenes.length}`, 65 + (i / scenes.length) * 15);
+
+        try {
+          const clipResult = await base44.asServiceRole.functions.invoke('generateVideoClip', {
+            apiKey: videoIntegration.api_key,
+            providerType: videoIntegration.provider_type,
+            prompt: scene.prompt,
+            duration: scene.duration,
+            aspectRatio: project.aspect_ratio
+          });
+
+          if (!clipResult.data.videoUrl) {
+            throw new Error(`No video URL returned for clip ${i + 1}`);
+          }
+
+          clipUrls.push(clipResult.data.videoUrl);
+
+          await base44.asServiceRole.entities.Artifact.create({
+            job_id: jobId,
+            project_id: projectId,
+            artifact_type: 'video_clip',
+            file_url: clipResult.data.videoUrl,
+            scene_index: i,
+            duration: scene.duration,
+            metadata: { prompt: scene.prompt }
+          });
+        } catch (clipError) {
+          console.error(`Failed to generate clip ${i + 1}:`, clipError);
+          throw new Error(`Video clip ${i + 1} generation failed: ${clipError.response?.data?.error || clipError.message}`);
+        }
+      }
+
+      await logEvent(base44, jobId, 'video_clip_generation', 'step_finished', 'All video clips generated', 80);
+    } else {
+      const existingClips = await base44.asServiceRole.entities.Artifact.filter({ job_id: jobId, artifact_type: 'video_clip' });
+      clipUrls = existingClips.sort((a, b) => a.scene_index - b.scene_index).map(c => c.file_url);
+      console.log('Skipping video clip generation - already completed');
+    }
 
     // Step 5: Assemble Final Video
-    await updateJobProgress(base44, jobId, projectId, 'running', 'video_assembly', 85);
-    await logEvent(base44, jobId, 'video_assembly', 'step_started', 'Assembling final video');
+    if (startStepIndex <= 5) {
+      await updateJobProgress(base44, jobId, projectId, 'running', 'video_assembly', 85);
+      await logEvent(base44, jobId, 'video_assembly', 'step_started', 'Assembling final video');
 
-    const assemblyResult = await base44.asServiceRole.functions.invoke('assembleVideo', {
-      apiKey: assemblyIntegration.api_key,
-      providerType: assemblyIntegration.provider_type,
-      clipUrls,
-      audioUrl: voiceResult.data.audioUrl,
-      scenes,
-      aspectRatio: project.aspect_ratio,
-      title: project.title
-    });
+      const assemblyResult = await base44.asServiceRole.functions.invoke('assembleVideo', {
+        apiKey: assemblyIntegration.api_key,
+        providerType: assemblyIntegration.provider_type,
+        clipUrls,
+        audioUrl: voiceResult.data.audioUrl,
+        scenes,
+        aspectRatio: project.aspect_ratio,
+        title: project.title
+      });
 
-    await base44.asServiceRole.entities.Artifact.create({
-      job_id: jobId,
-      project_id: projectId,
-      artifact_type: 'final_video',
-      file_url: assemblyResult.data.videoUrl,
-      duration: project.duration
-    });
+      await base44.asServiceRole.entities.Artifact.create({
+        job_id: jobId,
+        project_id: projectId,
+        artifact_type: 'final_video',
+        file_url: assemblyResult.data.videoUrl,
+        duration: project.duration
+      });
 
-    await logEvent(base44, jobId, 'video_assembly', 'step_finished', 'Final video assembled', 95);
+      await logEvent(base44, jobId, 'video_assembly', 'step_finished', 'Final video assembled', 95);
+    } else {
+      console.log('Skipping video assembly - already completed');
+    }
 
     // Complete
     await updateJobProgress(base44, jobId, projectId, 'completed', 'completed', 100);
@@ -225,7 +274,7 @@ async function generateVideo(base44, project, jobId) {
 
   } catch (error) {
     console.error('Generation error:', error);
-    await updateJobProgress(base44, jobId, projectId, 'failed', 'error', 0, error.message);
+    await updateJobProgress(base44, jobId, projectId, 'failed', job.current_step || 'error', 0, error.message);
     await logEvent(base44, jobId, 'error', 'step_failed', error.message, null, { error: error.stack });
     throw error;
   }
