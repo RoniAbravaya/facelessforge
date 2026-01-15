@@ -225,7 +225,7 @@ Deno.serve(async (req) => {
           }],
           parameters: {
             aspectRatio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '16:9' ? '16:9' : '16:9',
-            durationSeconds: durationNum
+            durationSeconds: parseInt(durationNum, 10)
           }
         })
       });
