@@ -75,7 +75,42 @@ async function pollRunwayGeneration(taskId, apiKey, maxAttempts = 60) {
   throw new Error('Runway generation timeout after 5 minutes');
 }
 
-// Removed Veo polling function as the API is not publicly available yet
+async function pollVeoGeneration(operationName, apiKey, maxAttempts = 60) {
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    const response = await fetch(`https://aiplatform.googleapis.com/v1/${operationName}`, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Veo polling error (${response.status}):`, errorText);
+      throw new Error(`Failed to poll Veo generation: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log(`Veo status (attempt ${i + 1}/${maxAttempts}):`, data.done ? 'done' : 'processing');
+    
+    if (data.done) {
+      if (data.error) {
+        console.error('Veo generation failed:', data.error);
+        throw new Error(`Veo generation failed: ${data.error.message}`);
+      }
+      const videoUrl = data.response?.generatedSamples?.[0]?.video?.uri || data.response?.videoUri;
+      if (!videoUrl) {
+        console.error('Veo completed but no video URL:', data);
+        throw new Error('Veo generation completed but no video URL found');
+      }
+      return videoUrl;
+    }
+  }
+
+  throw new Error('Veo generation timeout after 5 minutes');
+}
 
 Deno.serve(async (req) => {
   try {
@@ -169,9 +204,8 @@ Deno.serve(async (req) => {
       return Response.json({ videoUrl });
 
     } else if (providerType === 'video_veo') {
-      // Google Veo is not yet publicly available via API
-      // This is a placeholder for when the API becomes available
-      throw new Error('Google Veo API is not yet publicly available. Please use Luma AI or Runway ML instead.');
+      // Google Veo requires GCP project ID in additional_config
+      throw new Error('Google Veo is not fully configured. Please use Luma AI or Runway ML instead. (Veo requires Google Cloud Project ID setup)');
     }
 
     throw new Error('Unsupported video provider');
