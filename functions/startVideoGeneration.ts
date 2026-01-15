@@ -133,7 +133,8 @@ async function generateVideo(base44, project, jobId) {
     // Step 2: Generate Scene Plan
     let scenes;
     if (startStepIndex <= 2) {
-      await updateJobProgress(base44, jobId, projectId, 'running', 'scene_planning', 35);
+      currentStep = 'scene_planning';
+      await updateJobProgress(base44, jobId, projectId, 'running', currentStep, 35);
       await logEvent(base44, jobId, 'scene_planning', 'step_started', 'Creating scene breakdown');
 
       const scenePlanResult = await base44.asServiceRole.functions.invoke('generateScenePlan', {
