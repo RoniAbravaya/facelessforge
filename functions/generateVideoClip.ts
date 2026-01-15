@@ -149,7 +149,7 @@ Deno.serve(async (req) => {
         duration: `${durationNum}s`,
         resolution: '720p'
       };
-      
+
       // Add optional parameters if specified
       if (aspectRatio === '16:9' || aspectRatio === '9:16') {
         lumaBody.aspect_ratio = aspectRatio;
@@ -158,9 +158,17 @@ Deno.serve(async (req) => {
         lumaBody.loop = false;
       }
 
-      console.log(`[Luma Request] Headers:`, JSON.stringify({ Authorization: '***REDACTED***', 'Content-Type': 'application/json' }));
-      console.log(`[Luma Request] Body:`, JSON.stringify(lumaBody));
-      console.log(`[Luma Request] API Key length: ${apiKey?.length}, First 10 chars: ${apiKey?.substring(0, 10)}...`);
+      console.log('=== LUMA API REQUEST ===');
+      console.log(`URL: https://api.lumalabs.ai/dream-machine/v1/generations/video`);
+      console.log(`Method: POST`);
+      console.log(`Headers:`, JSON.stringify({ 
+        'Authorization': `Bearer ${apiKey.substring(0, 20)}...${apiKey.substring(apiKey.length - 20)}`,
+        'Content-Type': 'application/json' 
+      }, null, 2));
+      console.log(`Body:`, JSON.stringify(lumaBody, null, 2));
+      console.log(`Prompt length: ${prompt.length} chars`);
+      console.log(`Duration: ${durationNum}s (type: ${typeof durationNum})`);
+      console.log(`API Key valid: ${apiKey && apiKey.length > 0}`);
 
       const response = await fetch('https://api.lumalabs.ai/dream-machine/v1/generations/video', {
         method: 'POST',
@@ -168,21 +176,38 @@ Deno.serve(async (req) => {
         body: JSON.stringify(lumaBody)
       });
 
+      console.log(`Response Status: ${response.status} ${response.statusText}`);
+      console.log(`Response Headers:`, JSON.stringify({
+        'content-type': response.headers.get('content-type'),
+        'content-length': response.headers.get('content-length')
+      }, null, 2));
+
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[Luma API Error] Status: ${response.status}`);
-        console.error(`[Luma API Error] Response:`, errorText);
-        console.error(`[Luma API Error] Headers sent:`, JSON.stringify(lumaHeaders));
+        console.error('=== LUMA API ERROR ===');
+        console.error(`Status: ${response.status}`);
+        console.error(`Status Text: ${response.statusText}`);
+        console.error(`Raw Response:`, errorText);
+        console.error(`Response length: ${errorText.length} chars`);
+
         try {
           const error = JSON.parse(errorText);
+          console.error(`Parsed error object:`, JSON.stringify(error, null, 2));
           throw new Error(`Luma API error: ${error.error?.message || error.message || error.detail || errorText}`);
-        } catch {
+        } catch (parseError) {
+          console.error(`Failed to parse error as JSON:`, parseError.message);
           throw new Error(`Luma API error (${response.status}): ${errorText}`);
         }
       }
 
       const data = await response.json();
+      console.log('=== LUMA API SUCCESS ===');
+      console.log(`Response data:`, JSON.stringify(data, null, 2));
+
       const generationId = data.id;
+      if (!generationId) {
+        throw new Error(`Luma response missing generation ID. Response: ${JSON.stringify(data)}`);
+      }
 
       console.log(`Started Luma generation: ${generationId}`);
 
