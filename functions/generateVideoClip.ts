@@ -87,6 +87,10 @@ Deno.serve(async (req) => {
   try {
     const { apiKey, providerType, prompt, duration, aspectRatio } = await req.json();
 
+    console.log(`Generating video clip with ${providerType}`);
+    console.log(`Prompt: ${prompt}`);
+    console.log(`Duration: ${duration}, Aspect Ratio: ${aspectRatio}`);
+
     if (providerType === 'video_luma') {
       // Start Luma generation
       const response = await fetch('https://api.lumalabs.ai/dream-machine/v1/generations', {
@@ -103,8 +107,14 @@ Deno.serve(async (req) => {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error?.message || 'Luma API error');
+        const errorText = await response.text();
+        console.error(`Luma API error (${response.status}):`, errorText);
+        try {
+          const error = JSON.parse(errorText);
+          throw new Error(`Luma API error: ${error.error?.message || error.message || errorText}`);
+        } catch {
+          throw new Error(`Luma API error (${response.status}): ${errorText}`);
+        }
       }
 
       const data = await response.json();
@@ -133,8 +143,14 @@ Deno.serve(async (req) => {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error?.message || 'Runway API error');
+        const errorText = await response.text();
+        console.error(`Runway API error (${response.status}):`, errorText);
+        try {
+          const error = JSON.parse(errorText);
+          throw new Error(`Runway API error: ${error.error?.message || error.message || errorText}`);
+        } catch {
+          throw new Error(`Runway API error (${response.status}): ${errorText}`);
+        }
       }
 
       const data = await response.json();
@@ -165,8 +181,14 @@ Deno.serve(async (req) => {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error?.message || 'Veo API error');
+        const errorText = await response.text();
+        console.error(`Veo API error (${response.status}):`, errorText);
+        try {
+          const error = JSON.parse(errorText);
+          throw new Error(`Veo API error: ${error.error?.message || error.message || errorText}`);
+        } catch {
+          throw new Error(`Veo API error (${response.status}): ${errorText}`);
+        }
       }
 
       const data = await response.json();
