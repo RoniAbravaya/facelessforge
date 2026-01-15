@@ -144,12 +144,19 @@ Deno.serve(async (req) => {
         'Content-Type': 'application/json'
       };
       const lumaBody = {
-        model: 'ray-2',
         prompt,
+        model: 'ray-2',
         duration: `${durationNum}s`,
-        aspect_ratio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '16:9' ? '16:9' : '1:1',
-        loop: false
+        resolution: '720p'
       };
+      
+      // Add optional parameters if specified
+      if (aspectRatio === '16:9' || aspectRatio === '9:16') {
+        lumaBody.aspect_ratio = aspectRatio;
+      }
+      if (loop === false) {
+        lumaBody.loop = false;
+      }
 
       console.log(`[Luma Request] Headers:`, JSON.stringify({ Authorization: '***REDACTED***', 'Content-Type': 'application/json' }));
       console.log(`[Luma Request] Body:`, JSON.stringify(lumaBody));
