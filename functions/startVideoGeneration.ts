@@ -268,11 +268,11 @@ async function generateVideo(base44, project, jobId) {
       console.log('Skipping video clip generation - already completed');
     }
 
-    // Step 5: Assemble Final Video
+    // Step 5: Assemble Final Video (Client-Side)
     if (startStepIndex <= 5) {
       currentStep = 'video_assembly';
       await updateJobProgress(base44, jobId, projectId, 'running', currentStep, 85);
-      await logEvent(base44, jobId, 'video_assembly', 'step_started', 'Assembling final video');
+      await logEvent(base44, jobId, 'video_assembly', 'step_started', 'Preparing for client-side assembly');
 
       try {
         const assemblyResult = await base44.asServiceRole.functions.invoke('assembleVideo', {
@@ -283,7 +283,23 @@ async function generateVideo(base44, project, jobId) {
           jobId
         });
 
-        // Check for structured error response
+        // Check if client-side assembly is required
+        if (assemblyResult.data.mode === 'client_ffmpeg_wasm') {
+          console.log('[Assembly] Client-side assembly required - waiting for browser to complete');
+          await logEvent(base44, jobId, 'video_assembly', 'step_progress', 
+            'Client-side assembly required - browser will complete assembly', 
+            85,
+            { 
+              mode: 'client_ffmpeg_wasm',
+              clipCount: clipUrls.length,
+              correlationId: assemblyResult.data.correlationId
+            }
+          );
+          // Job will be completed by the client after assembly
+          return;
+        }
+
+        // Server-side assembly completed
         if (assemblyResult.data.ok === false) {
           const errorMsg = `${assemblyResult.data.errorCode}: ${assemblyResult.data.message}`;
           console.error(`[Assembly Error] ${errorMsg}`, assemblyResult.data.details);
@@ -300,7 +316,6 @@ async function generateVideo(base44, project, jobId) {
 
         await logEvent(base44, jobId, 'video_assembly', 'step_finished', 'Final video assembled', 95);
       } catch (assemblyError) {
-        // Log detailed assembly error
         const errorDetails = assemblyError.response?.data || { message: assemblyError.message };
         console.error('[Video Assembly Failed]', errorDetails);
         await logEvent(base44, jobId, 'video_assembly', 'step_failed', 

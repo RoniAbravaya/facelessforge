@@ -188,7 +188,7 @@ Deno.serve(async (req) => {
   try {
     const { clipUrls, audioUrl, aspectRatio, jobId } = await req.json();
 
-    console.log(`[${correlationId}] === VIDEO ASSEMBLY PROXY START ===`);
+    console.log(`[${correlationId}] === VIDEO ASSEMBLY START ===`);
     console.log(`[${correlationId}] Clip URLs count: ${clipUrls?.length}`);
     console.log(`[${correlationId}] Aspect Ratio: ${aspectRatio}`);
     console.log(`[${correlationId}] Job ID: ${jobId}`);
@@ -221,79 +221,30 @@ Deno.serve(async (req) => {
       }, { status: 400 });
     }
 
-    // Get assembly worker URL from environment
-    const ASSEMBLY_WORKER_URL = Deno.env.get('ASSEMBLY_WORKER_URL');
-    
-    if (!ASSEMBLY_WORKER_URL) {
-      return Response.json({
-        ok: false,
-        errorCode: 'worker_not_configured',
-        message: 'ASSEMBLY_WORKER_URL environment variable is not set',
-        correlationId
-      }, { status: 500 });
-    }
+    // Determine output dimensions
+    const dimensions = aspectRatio === '9:16' 
+      ? { width: 720, height: 1280 } 
+      : aspectRatio === '16:9' 
+      ? { width: 1280, height: 720 } 
+      : { width: 720, height: 720 };
 
-    console.log(`[${correlationId}] Forwarding to worker: ${ASSEMBLY_WORKER_URL}`);
-
-    // Call assembly worker with 5-minute timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
-
-    try {
-      const response = await fetch(`${ASSEMBLY_WORKER_URL}/assemble`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jobId,
-          clipUrls,
-          voiceoverUrl: audioUrl,
-          aspectRatio,
-          outputFps: 30,
-          resolution: '720p'
-        }),
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        console.error(`[${correlationId}] Worker error:`, result);
-        return Response.json({
-          ok: false,
-          step: 'video_assembly',
-          errorCode: result.errorCode || 'worker_error',
-          message: result.message || 'Assembly worker returned error',
-          details: result.details || {},
-          correlationId: result.correlationId || correlationId
-        }, { status: response.status });
-      }
-
-      console.log(`[${correlationId}] === VIDEO ASSEMBLY SUCCESS ===`);
-      console.log(`[${correlationId}] Final video URL: ${result.finalVideoUrl}`);
-
-      return Response.json({
-        ok: true,
-        videoUrl: result.finalVideoUrl,
-        jobId: result.jobId,
-        correlationId: result.correlationId
-      });
-
-    } catch (fetchError) {
-      clearTimeout(timeoutId);
-      
-      if (fetchError.name === 'AbortError') {
-        return Response.json({
-          ok: false,
-          errorCode: 'worker_timeout',
-          message: 'Assembly worker request timed out after 5 minutes',
-          correlationId
-        }, { status: 504 });
-      }
-
-      throw fetchError;
-    }
+    // Return client-side assembly instructions
+    console.log(`[${correlationId}] Returning client-side assembly mode`);
+    return Response.json({
+      ok: true,
+      mode: 'client_ffmpeg_wasm',
+      step: 'video_assembly',
+      jobId,
+      clipUrls,
+      voiceoverUrl: audioUrl,
+      output: {
+        width: dimensions.width,
+        height: dimensions.height,
+        fps: 30,
+        format: 'mp4'
+      },
+      correlationId
+    });
 
   } catch (error) {
     console.error(`[${correlationId}] === VIDEO ASSEMBLY ERROR ===`);
@@ -303,7 +254,7 @@ Deno.serve(async (req) => {
       ok: false,
       step: 'video_assembly',
       errorCode: 'proxy_error',
-      message: error.message || 'Failed to communicate with assembly worker',
+      message: error.message || 'Failed to prepare assembly',
       details: { stack: error.stack },
       correlationId
     }, { status: 500 });

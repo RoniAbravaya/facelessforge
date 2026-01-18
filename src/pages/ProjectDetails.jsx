@@ -15,6 +15,7 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import JobTimeline from '../components/project/JobTimeline';
 import ArtifactList from '../components/project/ArtifactList';
+import ClientAssembly from '../components/assembly/ClientAssembly';
 
 export default function ProjectDetails() {
   const urlParams = new URLSearchParams(window.location.search);
@@ -87,6 +88,7 @@ export default function ProjectDetails() {
 
   const [generationResults, setGenerationResults] = useState(null);
   const [fetchingGenerations, setFetchingGenerations] = useState(false);
+  const [clientAssemblyData, setClientAssemblyData] = useState(null);
 
   const handleFetchGenerations = async () => {
     setFetchingGenerations(true);
@@ -113,12 +115,56 @@ export default function ProjectDetails() {
         
         if (event.data.data) {
           console.log('Event data:', event.data.data);
+          
+          // Check if client-side assembly is needed
+          if (event.data.data.mode === 'client_ffmpeg_wasm') {
+            checkForClientAssembly();
+          }
         }
       }
     });
 
     return unsubscribe;
   }, [jobs[0]?.id]);
+
+  // Check if client assembly is needed
+  const checkForClientAssembly = async () => {
+    if (!latestJob || clientAssemblyData) return;
+    
+    if (latestJob.current_step === 'video_assembly' && latestJob.status === 'running') {
+      // Get clip and voiceover artifacts
+      const clipArtifacts = await base44.entities.Artifact.filter({
+        job_id: latestJob.id,
+        artifact_type: 'video_clip'
+      });
+      
+      const voiceArtifact = await base44.entities.Artifact.filter({
+        job_id: latestJob.id,
+        artifact_type: 'voiceover'
+      });
+      
+      if (clipArtifacts.length > 0 && voiceArtifact.length > 0) {
+        const clipUrls = clipArtifacts
+          .sort((a, b) => a.scene_index - b.scene_index)
+          .map(c => c.file_url);
+        
+        setClientAssemblyData({
+          clipUrls,
+          voiceoverUrl: voiceArtifact[0].file_url,
+          output: {
+            width: project.aspect_ratio === '9:16' ? 720 : project.aspect_ratio === '16:9' ? 1280 : 720,
+            height: project.aspect_ratio === '9:16' ? 1280 : project.aspect_ratio === '16:9' ? 720 : 720,
+            fps: 30,
+            format: 'mp4'
+          }
+        });
+      }
+    }
+  };
+
+  useEffect(() => {
+    checkForClientAssembly();
+  }, [latestJob?.current_step, latestJob?.status]);
 
   const latestJob = jobs[0];
 
@@ -299,6 +345,23 @@ export default function ProjectDetails() {
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {/* Client Assembly */}
+        {clientAssemblyData && !finalVideo && (
+          <ClientAssembly
+            assemblyData={clientAssemblyData}
+            projectId={projectId}
+            jobId={latestJob.id}
+            onComplete={() => {
+              queryClient.invalidateQueries({ queryKey: ['artifacts', projectId] });
+              queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+              queryClient.invalidateQueries({ queryKey: ['jobs', projectId] });
+            }}
+            onError={(error) => {
+              console.error('Client assembly error:', error);
+            }}
+          />
         )}
 
         {/* Fetched Videos Display */}
