@@ -306,7 +306,8 @@ Deno.serve(async (req) => {
         console.error(`Status Text: ${response.statusText}`);
         console.error(`Raw error text: "${errorText}"`);
         console.error(`Error text length: ${errorText.length} chars`);
-        console.error(`Error text as bytes: ${Buffer.byteLength(errorText, 'utf-8')} bytes`);
+        const byteLength = new TextEncoder().encode(errorText).length;
+        console.error(`Error text as bytes: ${byteLength} bytes`);
         console.error(`Error text charCodes:`, errorText.split('').map(c => c.charCodeAt(0)));
 
         try {
