@@ -149,7 +149,10 @@ async function pollVeoGeneration(operationName, veoApiKey, geminiApiKey, base44,
       
       // Download video using Gemini API key
       const downloadUrl = `https://generativelanguage.googleapis.com/v1beta/${fileUri}`;
-      console.log(`[Veo] Downloading with Gemini key from: ${downloadUrl}`);
+      const keySource = geminiApiKey ? 'integration' : 'missing';
+      const keyPreview = geminiApiKey ? `...${geminiApiKey.slice(-4)}` : 'NONE';
+      console.log(`[Veo Download] URL: ${downloadUrl}`);
+      console.log(`[Veo Download] Key source: ${keySource}, preview: ${keyPreview}`);
       
       const downloadResponse = await fetch(downloadUrl, {
         headers: {
@@ -159,11 +162,16 @@ async function pollVeoGeneration(operationName, veoApiKey, geminiApiKey, base44,
       
       if (!downloadResponse.ok) {
         const errorText = await downloadResponse.text();
-        console.error(`[Veo] Download failed (${downloadResponse.status}):`, errorText);
+        console.error(`[Veo Download] Failed (${downloadResponse.status}):`, errorText);
+        console.error(`[Veo Download] Key used: source=${keySource}, preview=${keyPreview}`);
+        
         if (downloadResponse.status === 403) {
-          throw new Error('Gemini API disabled. Enable Generative Language API in your Google Cloud project and add the key in Integrations.');
+          if (errorText.includes('SERVICE_DISABLED') || errorText.includes('disabled')) {
+            throw new Error('Your Google Cloud project must have Generative Language API enabled. Go to console.cloud.google.com, enable the API, then add that project\'s key in Integrations.');
+          }
+          throw new Error('Gemini API access denied. Verify your API key has Generative Language API enabled and add it in Integrations.');
         }
-        throw new Error(`Failed to download Veo clip: ${downloadResponse.status}`);
+        throw new Error(`Failed to download Veo clip (${downloadResponse.status}): ${errorText}`);
       }
       
       const videoBytes = new Uint8Array(await downloadResponse.arrayBuffer());
@@ -367,7 +375,10 @@ Deno.serve(async (req) => {
       } else {
         finalDuration = 8;
       }
-      console.log(`[Veo Request] Raw duration: ${rawDuration}, Final duration: ${finalDuration} (integer), Type: ${typeof finalDuration}`);
+      
+      const veoKeySource = apiKey ? 'integration' : 'missing';
+      const veoKeyPreview = apiKey ? `...${apiKey.slice(-4)}` : 'NONE';
+      console.log(`[Veo Request] Duration: ${finalDuration}s, Key source: ${veoKeySource}, preview: ${veoKeyPreview}`);
 
       const requestBody = {
         instances: [{
