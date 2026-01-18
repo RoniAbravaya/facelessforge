@@ -71,7 +71,12 @@ async function assembleShotstack(apiKey, clipUrls, audioUrl, scenes, aspectRatio
   }
 
   const renderData = await renderResponse.json();
-  const renderId = renderData.response.id;
+  console.log(`[Shotstack] Full response data:`, JSON.stringify(renderData, null, 2));
+  
+  const renderId = renderData.response?.id;
+  if (!renderId) {
+    throw new Error('Shotstack response missing render ID');
+  }
 
   console.log(`[Shotstack] Render started: ${renderId}`);
 
