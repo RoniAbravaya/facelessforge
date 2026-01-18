@@ -4,8 +4,20 @@ async function pollLumaGeneration(generationId, apiKey, maxAttempts = 60) {
   console.log(`[Luma Polling] Starting polling for generation ${generationId}`);
   console.log(`[Luma Polling] Max attempts: ${maxAttempts}, 5 seconds per attempt = ${maxAttempts * 5}s max wait`);
   
+  // Track elapsed time to prevent indefinite waits when provider doesn't respond
+  const startTime = Date.now();
+  const maxDurationMs = 5 * 60 * 1000; // 5 minutes max for Luma
+  
   for (let i = 0; i < maxAttempts; i++) {
-    console.log(`[Luma Polling] Attempt ${i + 1}/${maxAttempts} - waiting 5 seconds before poll...`);
+    // Check if we've exceeded maximum polling duration
+    const elapsed = Date.now() - startTime;
+    if (elapsed > maxDurationMs) {
+      const elapsedMin = Math.floor(elapsed / 60000);
+      console.error(`[Luma Polling] Timeout after ${elapsedMin} minutes`);
+      throw new Error(`Luma polling timed out after ${elapsedMin} minutes`);
+    }
+    
+    console.log(`[Luma Polling] Attempt ${i + 1}/${maxAttempts} (${Math.floor(elapsed / 1000)}s elapsed) - waiting 5 seconds before poll...`);
     await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
 
     try {
@@ -56,7 +68,20 @@ async function pollLumaGeneration(generationId, apiKey, maxAttempts = 60) {
 }
 
 async function pollRunwayGeneration(taskId, apiKey, maxAttempts = 60) {
+  // Track elapsed time to prevent indefinite waits when provider doesn't respond
+  const startTime = Date.now();
+  const maxDurationMs = 5 * 60 * 1000; // 5 minutes max for Runway
+  
   for (let i = 0; i < maxAttempts; i++) {
+    // Check if we've exceeded maximum polling duration
+    const elapsed = Date.now() - startTime;
+    if (elapsed > maxDurationMs) {
+      const elapsedMin = Math.floor(elapsed / 60000);
+      console.error(`[Runway Polling] Timeout after ${elapsedMin} minutes`);
+      throw new Error(`Runway polling timed out after ${elapsedMin} minutes`);
+    }
+    
+    console.log(`[Runway Polling] Attempt ${i + 1}/${maxAttempts} (${Math.floor(elapsed / 1000)}s elapsed) - waiting 5 seconds...`);
     await new Promise(resolve => setTimeout(resolve, 5000));
 
     const response = await fetch(`https://api.runwayml.com/v1/tasks/${taskId}`, {
@@ -93,7 +118,20 @@ async function pollRunwayGeneration(taskId, apiKey, maxAttempts = 60) {
 }
 
 async function pollVeoGeneration(operationName, veoApiKey, geminiApiKey, base44, maxAttempts = 72) {
+  // Track elapsed time to prevent indefinite waits when provider doesn't respond
+  const startTime = Date.now();
+  const maxDurationMs = 6 * 60 * 1000; // 6 minutes max for Veo
+  
   for (let i = 0; i < maxAttempts; i++) {
+    // Check if we've exceeded maximum polling duration
+    const elapsed = Date.now() - startTime;
+    if (elapsed > maxDurationMs) {
+      const elapsedMin = Math.floor(elapsed / 60000);
+      console.error(`[Veo Polling] Timeout after ${elapsedMin} minutes`);
+      throw new Error(`Veo polling timed out after ${elapsedMin} minutes`);
+    }
+    
+    console.log(`[Veo Polling] Attempt ${i + 1}/${maxAttempts} (${Math.floor(elapsed / 1000)}s elapsed) - waiting 5 seconds...`);
     // Veo can take up to 6 minutes, poll every 5 seconds
     await new Promise(resolve => setTimeout(resolve, 5000));
 
@@ -291,12 +329,28 @@ Deno.serve(async (req) => {
       console.log(`API Key first 50 chars: ${apiKey.substring(0, 50)}`);
       console.log(`API Key last 50 chars: ${apiKey.substring(Math.max(0, apiKey.length - 50))}`);
 
+      // Set timeout to prevent indefinite hangs when provider doesn't respond
+      // Timeout set to 6 minutes - can be tuned based on provider performance
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 6 * 60 * 1000);
+
       console.log('Making fetch request...');
-      const response = await fetch(requestUrl, {
-        method: 'POST',
-        headers: lumaHeaders,
-        body: requestBody
-      });
+      let response;
+      try {
+        response = await fetch(requestUrl, {
+          method: 'POST',
+          headers: lumaHeaders,
+          body: requestBody,
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
+      } catch (fetchError) {
+        clearTimeout(timeout);
+        if (fetchError.name === 'AbortError') {
+          throw new Error('Luma generation request timed out after 6 minutes');
+        }
+        throw fetchError;
+      }
 
       console.log(`Fetch completed, status: ${response.status}`);
 
@@ -355,19 +409,34 @@ Deno.serve(async (req) => {
       return Response.json({ videoUrl });
 
     } else if (providerType === 'video_runway') {
+      // Set timeout to prevent indefinite hangs when provider doesn't respond
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 6 * 60 * 1000);
+
       // Start Runway Gen-2 generation
-      const response = await fetch('https://api.runwayml.com/v1/gen2', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          prompt_text: prompt,
-          duration: Math.min(duration, 10),
-          ratio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '16:9' ? '16:9' : '1:1'
-        })
-      });
+      let response;
+      try {
+        response = await fetch('https://api.runwayml.com/v1/gen2', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            prompt_text: prompt,
+            duration: Math.min(duration, 10),
+            ratio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '16:9' ? '16:9' : '1:1'
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
+      } catch (fetchError) {
+        clearTimeout(timeout);
+        if (fetchError.name === 'AbortError') {
+          throw new Error('Runway generation request timed out after 6 minutes');
+        }
+        throw fetchError;
+      }
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -403,7 +472,7 @@ Deno.serve(async (req) => {
       } else {
         finalDuration = 8;
       }
-      
+
       const veoKeySource = apiKey ? 'integration' : 'missing';
       const veoKeyPreview = apiKey ? `...${apiKey.slice(-4)}` : 'NONE';
       console.log(`[Veo Request] Duration: ${finalDuration}s, Key source: ${veoKeySource}, preview: ${veoKeyPreview}`);
@@ -419,14 +488,29 @@ Deno.serve(async (req) => {
       };
       console.log(`[Veo Request Body]`, JSON.stringify(requestBody));
 
-      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning', {
-        method: 'POST',
-        headers: {
-          'x-goog-api-key': apiKey,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
-      });
+      // Set timeout to prevent indefinite hangs when provider doesn't respond
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 6 * 60 * 1000);
+
+      let response;
+      try {
+        response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning', {
+          method: 'POST',
+          headers: {
+            'x-goog-api-key': apiKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
+      } catch (fetchError) {
+        clearTimeout(timeout);
+        if (fetchError.name === 'AbortError') {
+          throw new Error('Veo generation request timed out after 6 minutes');
+        }
+        throw fetchError;
+      }
 
       if (!response.ok) {
         const errorText = await response.text();
