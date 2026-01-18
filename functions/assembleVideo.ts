@@ -12,7 +12,7 @@ async function assembleShotstack(apiKey, clipUrls, audioUrl, scenes, aspectRatio
   const timeline = {
     soundtrack: {
       src: audioUrl,
-      effect: 'fadeInFadeOut'
+      effect: 'fadeOut'
     },
     tracks: [
       {
