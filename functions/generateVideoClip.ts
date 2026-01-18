@@ -142,29 +142,44 @@ async function pollVeoGeneration(operationName, veoApiKey, geminiApiKey, base44,
       }
       
       console.log(`[Veo] Clip generated -> downloading from Files API: ${fileUri}`);
-      
+
       if (!geminiApiKey) {
         throw new Error('Gemini API Key required to download Veo clips. Add it in Integrations page.');
       }
-      
-      // Download video using Gemini API key
-      const downloadUrl = `https://generativelanguage.googleapis.com/v1beta/${fileUri}`;
+
+      // Some fileUri values are already fully-qualified URLs (e.g. "https://generativelanguage.googleapis.com/v1beta/files/...:download?alt=media")
+      // Only prefix if the URI is relative; otherwise use it as-is
+      let downloadUrl = fileUri;
+      if (!/^https?:\/\//.test(fileUri)) {
+        downloadUrl = `https://generativelanguage.googleapis.com/v1beta/${fileUri}`;
+      }
+
+      // Append API key as a query parameter (Files API accepts it this way)
+      const urlObj = new URL(downloadUrl);
+      if (geminiApiKey) {
+        urlObj.searchParams.set('key', geminiApiKey);
+      }
+      downloadUrl = urlObj.toString();
+
       const keySource = geminiApiKey ? 'integration' : 'missing';
       const keyPreview = geminiApiKey ? `...${geminiApiKey.slice(-4)}` : 'NONE';
       console.log(`[Veo Download] URL: ${downloadUrl}`);
       console.log(`[Veo Download] Key source: ${keySource}, preview: ${keyPreview}`);
-      
-      const downloadResponse = await fetch(downloadUrl, {
-        headers: {
-          'x-goog-api-key': geminiApiKey
-        }
-      });
-      
+
+      // Download video - retry once on 404 (file may not be immediately available)
+      let downloadResponse = await fetch(downloadUrl, { method: 'GET' });
+
+      if (!downloadResponse.ok && downloadResponse.status === 404) {
+        console.warn('[Veo Download] Received 404; waiting 5 seconds before retrying...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        downloadResponse = await fetch(downloadUrl, { method: 'GET' });
+      }
+
       if (!downloadResponse.ok) {
         const errorText = await downloadResponse.text();
         console.error(`[Veo Download] Failed (${downloadResponse.status}):`, errorText);
         console.error(`[Veo Download] Key used: source=${keySource}, preview=${keyPreview}`);
-        
+
         if (downloadResponse.status === 403) {
           if (errorText.includes('SERVICE_DISABLED') || errorText.includes('disabled')) {
             throw new Error('Your Google Cloud project must have Generative Language API enabled. Go to console.cloud.google.com, enable the API, then add that project\'s key in Integrations.');
@@ -173,16 +188,16 @@ async function pollVeoGeneration(operationName, veoApiKey, geminiApiKey, base44,
         }
         throw new Error(`Failed to download Veo clip (${downloadResponse.status}): ${errorText}`);
       }
-      
+
       const videoBytes = new Uint8Array(await downloadResponse.arrayBuffer());
       console.log(`[Veo] Downloaded ${videoBytes.length} bytes (${(videoBytes.length / 1024 / 1024).toFixed(2)} MB)`);
-      
+
       // Upload to Base44 storage
       console.log('[Veo] Uploading clip to Base44 storage...');
       const blob = new Blob([videoBytes], { type: 'video/mp4' });
       const uploadResult = await base44.asServiceRole.integrations.Core.UploadFile({ file: blob });
       console.log(`[Veo] ✓ Clip uploaded (downloaded) -> Base44 URL: ${uploadResult.file_url}`);
-      
+
       return uploadResult.file_url;
     }
   }
