@@ -287,21 +287,38 @@ async function generateVideo(base44, project, jobId) {
         if (generatedScenes.has(i)) {
           const clip = existingClips.find(c => c.scene_index === i);
           clipUrls.push(clip.file_url);
-          console.log(`Skipping clip ${i + 1}/${scenes.length} - already generated`);
+          const timestamp = new Date().toISOString();
+          console.log(`[${timestamp}] [Clip ${i + 1}/${scenes.length}] ⏭️ Skipping - already generated`);
           await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', `Skipped clip ${i + 1}/${scenes.length}`, progressPercent);
           continue;
         }
 
-        console.log(`[Clip Generation] Starting clip ${i + 1}/${scenes.length}`);
-        await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', `Generating clip ${i + 1}/${scenes.length}`, progressPercent);
+        const clipStartTime = Date.now();
+        const clipStartTimestamp = new Date().toISOString();
+
+        // Clamp duration to 4-8 seconds (required by video generation APIs)
+        const rawDuration = scene.duration;
+        const clampedDuration = Math.max(4, Math.min(8, Math.round(rawDuration)));
+
+        console.log(`[${clipStartTimestamp}] === STARTING CLIP ${i + 1}/${scenes.length} ===`);
+        console.log(`[${clipStartTimestamp}] [Clip ${i + 1}] Provider: ${videoIntegration.provider_type}`);
+        console.log(`[${clipStartTimestamp}] [Clip ${i + 1}] Prompt: "${scene.prompt?.substring(0, 150)}..."`);
+        console.log(`[${clipStartTimestamp}] [Clip ${i + 1}] Duration: raw=${rawDuration}s, clamped=${clampedDuration}s`);
+        console.log(`[${clipStartTimestamp}] [Clip ${i + 1}] Aspect Ratio: ${project.aspect_ratio}`);
+
+        await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', 
+          `Starting clip ${i + 1}/${scenes.length} (${clampedDuration}s, ${videoIntegration.provider_type})`, 
+          progressPercent,
+          {
+            clipIndex: i,
+            totalClips: scenes.length,
+            duration: clampedDuration,
+            provider: videoIntegration.provider_type,
+            promptPreview: scene.prompt?.substring(0, 100)
+          }
+        );
 
         try {
-          // Clamp duration to 4-8 seconds (required by video generation APIs)
-          const rawDuration = scene.duration;
-          const clampedDuration = Math.max(4, Math.min(8, Math.round(rawDuration)));
-          console.log(`[Clip ${i + 1}/${scenes.length}] Raw duration: ${rawDuration}, Type: ${typeof rawDuration}, Clamped: ${clampedDuration}, IsNumber: ${!isNaN(rawDuration)}`);
-          console.log(`[Clip ${i + 1}] Scene object:`, JSON.stringify({ duration: scene.duration, prompt: scene.prompt?.substring(0, 50) }));
-
           const clipResult = await base44.asServiceRole.functions.invoke('generateVideoClip', {
             apiKey: videoIntegration.api_key,
             providerType: videoIntegration.provider_type,
@@ -315,6 +332,13 @@ async function generateVideo(base44, project, jobId) {
             throw new Error(`No video URL returned for clip ${i + 1}`);
           }
 
+          const clipEndTime = Date.now();
+          const clipDuration = Math.floor((clipEndTime - clipStartTime) / 1000);
+          const clipEndTimestamp = new Date().toISOString();
+
+          console.log(`[${clipEndTimestamp}] [Clip ${i + 1}/${scenes.length}] ✅ SUCCESS in ${clipDuration}s`);
+          console.log(`[${clipEndTimestamp}] [Clip ${i + 1}] Video URL: ${clipResult.data.videoUrl}`);
+
           clipUrls.push(clipResult.data.videoUrl);
 
           await base44.asServiceRole.entities.Artifact.create({
@@ -324,10 +348,36 @@ async function generateVideo(base44, project, jobId) {
             file_url: clipResult.data.videoUrl,
             scene_index: i,
             duration: scene.duration,
-            metadata: { prompt: scene.prompt }
+            metadata: { prompt: scene.prompt, generationTimeSeconds: clipDuration }
           });
+
+          await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', 
+            `Completed clip ${i + 1}/${scenes.length} in ${clipDuration}s`, 
+            progressPercent,
+            {
+              clipIndex: i,
+              generationTimeSeconds: clipDuration,
+              videoUrl: clipResult.data.videoUrl
+            }
+          );
         } catch (clipError) {
-          console.error(`Failed to generate clip ${i + 1}:`, clipError);
+          const clipEndTimestamp = new Date().toISOString();
+          const clipDuration = Math.floor((Date.now() - clipStartTime) / 1000);
+
+          console.error(`[${clipEndTimestamp}] [Clip ${i + 1}/${scenes.length}] ❌ FAILED after ${clipDuration}s`);
+          console.error(`[${clipEndTimestamp}] [Clip ${i + 1}] Error:`, clipError.message);
+          console.error(`[${clipEndTimestamp}] [Clip ${i + 1}] Stack:`, clipError.stack);
+
+          await logEvent(base44, jobId, 'video_clip_generation', 'step_failed', 
+            `Clip ${i + 1}/${scenes.length} failed: ${clipError.message}`, 
+            progressPercent,
+            {
+              clipIndex: i,
+              error: clipError.message,
+              generationTimeSeconds: clipDuration
+            }
+          );
+
           throw new Error(`Video clip ${i + 1} generation failed: ${clipError.response?.data?.error || clipError.message}`);
         }
       }

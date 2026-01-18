@@ -1,7 +1,8 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
 
-async function pollLumaGeneration(generationId, apiKey, maxAttempts = 60) {
-  console.log(`[Luma Polling] Starting polling for generation ${generationId}`);
+async function pollLumaGeneration(generationId, apiKey, jobId, base44, maxAttempts = 60) {
+  const pollStartTime = new Date().toISOString();
+  console.log(`[${pollStartTime}] [Luma Polling] Starting polling for generation ${generationId}`);
   console.log(`[Luma Polling] Max attempts: ${maxAttempts}, 5 seconds per attempt = ${maxAttempts * 5}s max wait`);
   
   // Track elapsed time to prevent indefinite waits when provider doesn't respond
@@ -11,18 +12,23 @@ async function pollLumaGeneration(generationId, apiKey, maxAttempts = 60) {
   for (let i = 0; i < maxAttempts; i++) {
     // Check if we've exceeded maximum polling duration
     const elapsed = Date.now() - startTime;
+    const elapsedSeconds = Math.floor(elapsed / 1000);
+    
     if (elapsed > maxDurationMs) {
       const elapsedMin = Math.floor(elapsed / 60000);
-      console.error(`[Luma Polling] Timeout after ${elapsedMin} minutes`);
+      const timestamp = new Date().toISOString();
+      console.error(`[${timestamp}] [Luma Polling] Timeout after ${elapsedMin} minutes`);
       throw new Error(`Luma polling timed out after ${elapsedMin} minutes`);
     }
     
-    console.log(`[Luma Polling] Attempt ${i + 1}/${maxAttempts} (${Math.floor(elapsed / 1000)}s elapsed) - waiting 5 seconds before poll...`);
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] [Luma Polling] Attempt ${i + 1}/${maxAttempts} (${elapsedSeconds}s elapsed) - waiting 5 seconds before poll...`);
     await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
 
     try {
       const pollUrl = `https://api.lumalabs.ai/dream-machine/v1/generations/${generationId}`;
-      console.log(`[Luma Polling] Making request to ${pollUrl}`);
+      const requestTimestamp = new Date().toISOString();
+      console.log(`[${requestTimestamp}] [Luma Polling] Making request to ${pollUrl}`);
       
       const response = await fetch(pollUrl, {
         headers: {
@@ -30,7 +36,8 @@ async function pollLumaGeneration(generationId, apiKey, maxAttempts = 60) {
         }
       });
 
-      console.log(`[Luma Polling] Response status: ${response.status}`);
+      const responseTimestamp = new Date().toISOString();
+      console.log(`[${responseTimestamp}] [Luma Polling] Response status: ${response.status}`);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -39,27 +46,48 @@ async function pollLumaGeneration(generationId, apiKey, maxAttempts = 60) {
       }
 
       const data = await response.json();
+      const currentState = data.state || 'unknown';
+      console.log(`[${responseTimestamp}] [Luma Polling] State: ${currentState}, Attempt: ${i + 1}, Elapsed: ${elapsedSeconds}s`);
       console.log(`[Luma Polling] Full response data:`, JSON.stringify(data, null, 2));
-      console.log(`[Luma Polling] State: ${data.state}`);
+      
+      // Log progress event to job
+      if (jobId && base44) {
+        await base44.asServiceRole.entities.JobEvent.create({
+          job_id: jobId,
+          level: 'info',
+          step: 'video_clip_generation',
+          event_type: 'step_progress',
+          message: `Luma polling: attempt ${i + 1}, state=${currentState}, elapsed=${elapsedSeconds}s`,
+          progress: null,
+          data: { 
+            provider: 'luma', 
+            generationId, 
+            attemptNumber: i + 1, 
+            elapsedSeconds, 
+            state: currentState 
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
       
       if (data.state === 'completed') {
         const videoUrl = data.assets?.video || data.video_url;
-        console.log(`[Luma Polling] Generation completed! Video URL:`, videoUrl);
+        console.log(`[${new Date().toISOString()}] [Luma Polling] ✅ Generation completed! Video URL:`, videoUrl);
         if (!videoUrl) {
-          console.error('Luma completed but no video URL:', data);
+          console.error('[Luma Polling] ❌ Completed but no video URL. Full response:', JSON.stringify(data, null, 2));
           throw new Error('Luma generation completed but no video URL found');
         }
         return videoUrl;
       } else if (data.state === 'failed') {
         const errorMsg = data.failure_reason || 'Unknown error';
-        console.error(`[Luma Polling] Generation failed:`, errorMsg);
+        console.error(`[${new Date().toISOString()}] [Luma Polling] ❌ Generation failed:`, errorMsg);
         throw new Error(`Luma video generation failed: ${errorMsg}`);
       }
       
-      console.log(`[Luma Polling] Still processing... (${data.state})`);
+      console.log(`[Luma Polling] ⏳ Still processing... (${currentState})`);
       // Still processing, continue polling
     } catch (pollError) {
-      console.error(`[Luma Polling] Error during poll attempt ${i + 1}:`, pollError.message);
+      console.error(`[${new Date().toISOString()}] [Luma Polling] ❌ Error during poll attempt ${i + 1}:`, pollError.message);
       throw pollError;
     }
   }
@@ -67,23 +95,33 @@ async function pollLumaGeneration(generationId, apiKey, maxAttempts = 60) {
   throw new Error(`Luma generation timeout after ${maxAttempts * 5}s`);
 }
 
-async function pollRunwayGeneration(taskId, apiKey, maxAttempts = 60) {
+async function pollRunwayGeneration(taskId, apiKey, jobId, base44, maxAttempts = 60) {
   // Track elapsed time to prevent indefinite waits when provider doesn't respond
   const startTime = Date.now();
   const maxDurationMs = 5 * 60 * 1000; // 5 minutes max for Runway
   
+  const pollStartTime = new Date().toISOString();
+  console.log(`[${pollStartTime}] [Runway Polling] Starting polling for task ${taskId}`);
+  
   for (let i = 0; i < maxAttempts; i++) {
     // Check if we've exceeded maximum polling duration
     const elapsed = Date.now() - startTime;
+    const elapsedSeconds = Math.floor(elapsed / 1000);
+    
     if (elapsed > maxDurationMs) {
       const elapsedMin = Math.floor(elapsed / 60000);
-      console.error(`[Runway Polling] Timeout after ${elapsedMin} minutes`);
+      const timestamp = new Date().toISOString();
+      console.error(`[${timestamp}] [Runway Polling] Timeout after ${elapsedMin} minutes`);
       throw new Error(`Runway polling timed out after ${elapsedMin} minutes`);
     }
     
-    console.log(`[Runway Polling] Attempt ${i + 1}/${maxAttempts} (${Math.floor(elapsed / 1000)}s elapsed) - waiting 5 seconds...`);
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] [Runway Polling] Attempt ${i + 1}/${maxAttempts} (${elapsedSeconds}s elapsed) - waiting 5 seconds...`);
     await new Promise(resolve => setTimeout(resolve, 5000));
 
+    const requestTimestamp = new Date().toISOString();
+    console.log(`[${requestTimestamp}] [Runway Polling] Fetching status...`);
+    
     const response = await fetch(`https://api.runwayml.com/v1/tasks/${taskId}`, {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -91,50 +129,88 @@ async function pollRunwayGeneration(taskId, apiKey, maxAttempts = 60) {
       }
     });
 
+    const responseTimestamp = new Date().toISOString();
+    console.log(`[${responseTimestamp}] [Runway Polling] Response status: ${response.status}`);
+
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`Runway polling error (${response.status}):`, errorText);
+      console.error(`[Runway Polling] Error response (${response.status}):`, errorText);
       throw new Error(`Failed to poll Runway generation: ${response.status}`);
     }
 
     const data = await response.json();
-    console.log(`Runway status (attempt ${i + 1}/${maxAttempts}):`, data.status);
+    const currentStatus = data.status || 'unknown';
+    console.log(`[${responseTimestamp}] [Runway Polling] Status: ${currentStatus}, Attempt: ${i + 1}, Elapsed: ${elapsedSeconds}s`);
+    console.log(`[Runway Polling] Full response:`, JSON.stringify(data, null, 2));
+    
+    // Log progress event to job
+    if (jobId && base44) {
+      await base44.asServiceRole.entities.JobEvent.create({
+        job_id: jobId,
+        level: 'info',
+        step: 'video_clip_generation',
+        event_type: 'step_progress',
+        message: `Runway polling: attempt ${i + 1}, status=${currentStatus}, elapsed=${elapsedSeconds}s`,
+        progress: null,
+        data: { 
+          provider: 'runway', 
+          taskId, 
+          attemptNumber: i + 1, 
+          elapsedSeconds, 
+          state: currentStatus 
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
     
     if (data.status === 'SUCCEEDED') {
       const videoUrl = data.output?.[0] || data.artifacts?.[0]?.url;
+      console.log(`[${new Date().toISOString()}] [Runway Polling] ✅ Generation succeeded! Video URL:`, videoUrl);
       if (!videoUrl) {
-        console.error('Runway completed but no video URL:', data);
+        console.error('[Runway Polling] ❌ Succeeded but no video URL. Full response:', JSON.stringify(data, null, 2));
         throw new Error('Runway generation completed but no video URL found');
       }
       return videoUrl;
     } else if (data.status === 'FAILED') {
       const errorMsg = data.failure || data.error || 'Unknown error';
-      console.error('Runway generation failed:', errorMsg);
+      console.error(`[${new Date().toISOString()}] [Runway Polling] ❌ Generation failed:`, errorMsg);
       throw new Error(`Runway video generation failed: ${errorMsg}`);
     }
+    
+    console.log(`[Runway Polling] ⏳ Still processing... (${currentStatus})`);
   }
 
   throw new Error('Runway generation timeout after 5 minutes');
 }
 
-async function pollVeoGeneration(operationName, veoApiKey, geminiApiKey, base44, maxAttempts = 72) {
+async function pollVeoGeneration(operationName, veoApiKey, geminiApiKey, base44, jobId, maxAttempts = 72) {
   // Track elapsed time to prevent indefinite waits when provider doesn't respond
   const startTime = Date.now();
   const maxDurationMs = 6 * 60 * 1000; // 6 minutes max for Veo
   
+  const pollStartTime = new Date().toISOString();
+  console.log(`[${pollStartTime}] [Veo Polling] Starting polling for operation ${operationName}`);
+  
   for (let i = 0; i < maxAttempts; i++) {
     // Check if we've exceeded maximum polling duration
     const elapsed = Date.now() - startTime;
+    const elapsedSeconds = Math.floor(elapsed / 1000);
+    
     if (elapsed > maxDurationMs) {
       const elapsedMin = Math.floor(elapsed / 60000);
-      console.error(`[Veo Polling] Timeout after ${elapsedMin} minutes`);
+      const timestamp = new Date().toISOString();
+      console.error(`[${timestamp}] [Veo Polling] Timeout after ${elapsedMin} minutes`);
       throw new Error(`Veo polling timed out after ${elapsedMin} minutes`);
     }
     
-    console.log(`[Veo Polling] Attempt ${i + 1}/${maxAttempts} (${Math.floor(elapsed / 1000)}s elapsed) - waiting 5 seconds...`);
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] [Veo Polling] Attempt ${i + 1}/${maxAttempts} (${elapsedSeconds}s elapsed) - waiting 5 seconds...`);
     // Veo can take up to 6 minutes, poll every 5 seconds
     await new Promise(resolve => setTimeout(resolve, 5000));
 
+    const requestTimestamp = new Date().toISOString();
+    console.log(`[${requestTimestamp}] [Veo Polling] Fetching status...`);
+    
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/${operationName}`, {
       headers: {
         'x-goog-api-key': veoApiKey,
@@ -142,25 +218,52 @@ async function pollVeoGeneration(operationName, veoApiKey, geminiApiKey, base44,
       }
     });
 
+    const responseTimestamp = new Date().toISOString();
+    console.log(`[${responseTimestamp}] [Veo Polling] Response status: ${response.status}`);
+
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`Veo polling error (${response.status}):`, errorText);
+      console.error(`[Veo Polling] Error response (${response.status}):`, errorText);
       throw new Error(`Failed to poll Veo generation: ${response.status}`);
     }
 
     const data = await response.json();
-    console.log(`Veo status (attempt ${i + 1}/${maxAttempts}):`, data.done ? 'done' : 'processing');
+    const isDone = data.done || false;
+    const currentState = isDone ? 'done' : 'processing';
+    console.log(`[${responseTimestamp}] [Veo Polling] State: ${currentState}, Attempt: ${i + 1}, Elapsed: ${elapsedSeconds}s`);
+    console.log(`[Veo Polling] Full response:`, JSON.stringify(data, null, 2));
     
+    // Log progress event to job
+    if (jobId && base44) {
+      await base44.asServiceRole.entities.JobEvent.create({
+        job_id: jobId,
+        level: 'info',
+        step: 'video_clip_generation',
+        event_type: 'step_progress',
+        message: `Veo polling: attempt ${i + 1}, state=${currentState}, elapsed=${elapsedSeconds}s`,
+        progress: null,
+        data: { 
+          provider: 'veo', 
+          operationName, 
+          attemptNumber: i + 1, 
+          elapsedSeconds, 
+          state: currentState 
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
+
     if (data.done) {
       if (data.error) {
-        console.error('Veo generation failed:', data.error);
+        console.error(`[${new Date().toISOString()}] [Veo Polling] ❌ Generation failed:`, data.error);
         throw new Error(`Veo generation failed: ${data.error.message}`);
       }
       
       // Check for inline data first
       const inlineData = data.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.inlineData?.data;
       if (inlineData) {
-        console.log('[Veo] Clip generated -> extracting bytes from inline base64');
+        const timestamp = new Date().toISOString();
+        console.log(`[${timestamp}] [Veo] ✅ Clip generated -> extracting bytes from inline base64`);
         console.log(`[Veo] Base64 data size: ${inlineData.length} chars (~${Math.round(inlineData.length * 0.75 / 1024 / 1024)} MB)`);
 
         const videoBytes = Uint8Array.from(atob(inlineData), c => c.charCodeAt(0));
@@ -169,14 +272,14 @@ async function pollVeoGeneration(operationName, veoApiKey, geminiApiKey, base44,
         // Must use File (not Blob) for Core.UploadFile - matches generateVoiceover.js pattern
         const videoFile = new File([videoBytes], 'veo_clip.mp4', { type: 'video/mp4' });
         const uploadResult = await base44.asServiceRole.integrations.Core.UploadFile({ file: videoFile });
-        console.log(`[Veo] ✓ Clip uploaded (inline) -> Base44 URL: ${uploadResult.file_url}`);
+        console.log(`[${new Date().toISOString()}] [Veo] ✓ Clip uploaded (inline) -> Base44 URL: ${uploadResult.file_url}`);
         return uploadResult.file_url;
       }
-      
+
       // Otherwise, download from Files API using Gemini API key
       const fileUri = data.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
       if (!fileUri) {
-        console.error('Veo completed but no video data:', JSON.stringify(data, null, 2));
+        console.error(`[${new Date().toISOString()}] [Veo Polling] ❌ Completed but no video data. Full response:`, JSON.stringify(data, null, 2));
         throw new Error('Veo generation completed but no video data found');
       }
       
@@ -250,7 +353,13 @@ Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
   
   try {
+    const requestStartTime = new Date().toISOString();
     const { apiKey, providerType, prompt, duration, aspectRatio, geminiApiKey } = await req.json();
+    
+    console.log(`[${requestStartTime}] === VIDEO CLIP GENERATION REQUEST ===`);
+    console.log(`[${requestStartTime}] Provider: ${providerType}`);
+    console.log(`[${requestStartTime}] Prompt: ${prompt?.substring(0, 100)}...`);
+    console.log(`[${requestStartTime}] Duration: ${duration}s, Aspect Ratio: ${aspectRatio}`);
 
     // Ensure duration is an integer and valid (4-8 seconds)
     const parsedDuration = Number(duration);
@@ -402,10 +511,12 @@ Deno.serve(async (req) => {
 
       console.log(`Started Luma generation: ${generationId}`);
 
-      // Poll for completion
-      const videoUrl = await pollLumaGeneration(generationId, apiKey);
+      // Poll for completion - pass jobId and base44 for logging
+      const videoUrl = await pollLumaGeneration(generationId, apiKey, null, null);
 
-      console.log(`Luma generation completed: ${videoUrl}`);
+      const completionTime = new Date().toISOString();
+      const totalTime = Math.floor((Date.now() - new Date(requestStartTime).getTime()) / 1000);
+      console.log(`[${completionTime}] ✅ Luma generation completed in ${totalTime}s: ${videoUrl}`);
       return Response.json({ videoUrl });
 
     } else if (providerType === 'video_runway') {
@@ -454,10 +565,12 @@ Deno.serve(async (req) => {
 
       console.log(`Started Runway generation: ${taskId}`);
 
-      // Poll for completion
-      const videoUrl = await pollRunwayGeneration(taskId, apiKey);
+      // Poll for completion - pass jobId and base44 for logging
+      const videoUrl = await pollRunwayGeneration(taskId, apiKey, null, null);
 
-      console.log(`Runway generation completed: ${videoUrl}`);
+      const completionTime = new Date().toISOString();
+      const totalTime = Math.floor((Date.now() - new Date(requestStartTime).getTime()) / 1000);
+      console.log(`[${completionTime}] ✅ Runway generation completed in ${totalTime}s: ${videoUrl}`);
       return Response.json({ videoUrl });
 
     } else if (providerType === 'video_veo') {
@@ -529,9 +642,11 @@ Deno.serve(async (req) => {
       console.log(`Started Veo generation: ${operationName}`);
 
       // Poll for completion - returns Base44 URL after download/upload
-      const videoUrl = await pollVeoGeneration(operationName, apiKey, geminiApiKey, base44);
+      const videoUrl = await pollVeoGeneration(operationName, apiKey, geminiApiKey, base44, null);
 
-      console.log(`Veo generation completed with Base44 URL: ${videoUrl}`);
+      const completionTime = new Date().toISOString();
+      const totalTime = Math.floor((Date.now() - new Date(requestStartTime).getTime()) / 1000);
+      console.log(`[${completionTime}] ✅ Veo generation completed in ${totalTime}s with Base44 URL: ${videoUrl}`);
       return Response.json({ videoUrl });
     }
 
