@@ -92,7 +92,7 @@ async function pollRunwayGeneration(taskId, apiKey, maxAttempts = 60) {
   throw new Error('Runway generation timeout after 5 minutes');
 }
 
-async function pollVeoGeneration(operationName, apiKey, maxAttempts = 72) {
+async function pollVeoGeneration(operationName, apiKey, base44, maxAttempts = 72) {
   for (let i = 0; i < maxAttempts; i++) {
     // Veo can take up to 6 minutes, poll every 5 seconds
     await new Promise(resolve => setTimeout(resolve, 5000));
@@ -118,12 +118,29 @@ async function pollVeoGeneration(operationName, apiKey, maxAttempts = 72) {
         console.error('Veo generation failed:', data.error);
         throw new Error(`Veo generation failed: ${data.error.message}`);
       }
-      const videoUrl = data.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
-      if (!videoUrl) {
-        console.error('Veo completed but no video URL:', data);
-        throw new Error('Veo generation completed but no video URL found');
+      
+      // Extract inline video data (base64)
+      const inlineData = data.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.inlineData?.data;
+      if (!inlineData) {
+        console.error('Veo completed but no inline video data:', JSON.stringify(data, null, 2));
+        throw new Error('Veo generation completed but no inline video data found');
       }
-      return videoUrl;
+      
+      console.log('[Veo] Clip generated -> extracting bytes from base64');
+      console.log(`[Veo] Base64 data size: ${inlineData.length} chars (~${Math.round(inlineData.length * 0.75 / 1024 / 1024)} MB)`);
+      
+      // Convert base64 to bytes
+      const videoBytes = Uint8Array.from(atob(inlineData), c => c.charCodeAt(0));
+      console.log(`[Veo] Converted to bytes: ${videoBytes.length} bytes (${(videoBytes.length / 1024 / 1024).toFixed(2)} MB)`);
+      
+      // Upload to Base44 storage
+      console.log('[Veo] Uploading clip to Base44 storage...');
+      const blob = new Blob([videoBytes], { type: 'video/mp4' });
+      const uploadResult = await base44.asServiceRole.integrations.Core.UploadFile({ file: blob });
+      const base44Url = uploadResult.file_url;
+      
+      console.log(`[Veo] ✓ Clip uploaded -> Base44 URL: ${base44Url}`);
+      return base44Url;
     }
   }
 
@@ -133,6 +150,8 @@ async function pollVeoGeneration(operationName, apiKey, maxAttempts = 72) {
 
 
 Deno.serve(async (req) => {
+  const base44 = createClientFromRequest(req);
+  
   try {
     const { apiKey, providerType, prompt, duration, aspectRatio } = await req.json();
 
@@ -351,10 +370,10 @@ Deno.serve(async (req) => {
 
       console.log(`Started Veo generation: ${operationName}`);
 
-      // Poll for completion
-      const videoUrl = await pollVeoGeneration(operationName, apiKey);
+      // Poll for completion - returns Base44 URL after inline upload
+      const videoUrl = await pollVeoGeneration(operationName, apiKey, base44);
 
-      console.log(`Veo generation completed: ${videoUrl}`);
+      console.log(`Veo generation completed with Base44 URL: ${videoUrl}`);
       return Response.json({ videoUrl });
     }
 
