@@ -40,10 +40,15 @@ async function assembleShotstack(apiKey, clipUrls, audioUrl, scenes, aspectRatio
     fps: 30
   };
 
+  // Detect if using sandbox key (starts with lowercase letter) vs production (starts with uppercase)
+  const isSandbox = apiKey && apiKey[0] === apiKey[0].toLowerCase();
+  const baseUrl = isSandbox ? 'https://api.shotstack.io/stage' : 'https://api.shotstack.io/v1';
+  
+  console.log(`[Shotstack] Using ${isSandbox ? 'SANDBOX' : 'PRODUCTION'} environment`);
   console.log('[Shotstack] Request body:', JSON.stringify({ timeline, output }, null, 2));
 
   // Submit render
-  const renderResponse = await fetch('https://api.shotstack.io/v1/render', {
+  const renderResponse = await fetch(`${baseUrl}/render`, {
     method: 'POST',
     headers: {
       'x-api-key': apiKey,
