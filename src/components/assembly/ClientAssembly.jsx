@@ -252,9 +252,10 @@ export default function ClientAssembly({ assemblyData, projectId, jobId, onCompl
       const file = new File([finalData], 'final.mp4', { type: 'video/mp4' });
       addLog(`File created: ${file.name}, size: ${file.size} bytes`, 'info');
       
+      let finalVideoUrl;
       try {
         const uploadResult = await base44.integrations.Core.UploadFile({ file: file });
-        const finalVideoUrl = uploadResult.file_url;
+        finalVideoUrl = uploadResult.file_url;
         setProgress(95);
         addLog(`Upload complete: ${finalVideoUrl}`, 'success');
       } catch (uploadError) {
@@ -262,8 +263,6 @@ export default function ClientAssembly({ assemblyData, projectId, jobId, onCompl
         console.error('Upload error details:', uploadError);
         throw new Error(`Failed to upload video: ${uploadError.message}`);
       }
-      
-      const finalVideoUrl = uploadResult.file_url;
 
       // Save artifact
       addLog('Saving artifact metadata...', 'info');
