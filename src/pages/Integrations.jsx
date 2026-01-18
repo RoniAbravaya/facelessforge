@@ -27,6 +27,9 @@ const PROVIDERS = {
     { type: 'video_runway', name: 'Runway ML', description: 'Gen-2 video generation', icon: Video },
     { type: 'video_veo', name: 'Google Veo', description: 'Google Veo video generation', icon: Video }
   ],
+  gemini: [
+    { type: 'gemini_api', name: 'Gemini API Key', description: 'Required for Veo video downloads (Generative Language API must be enabled)', icon: Brain }
+  ],
   assembly: [
     { type: 'assembly_shotstack', name: 'Shotstack', description: 'Cloud video editing API', icon: Clapperboard },
     { type: 'assembly_creatomate', name: 'Creatomate', description: 'Template-based video API', icon: Clapperboard },
@@ -158,6 +161,7 @@ export default function Integrations() {
                 {category === 'llm' ? 'LLM Provider' : 
                  category === 'voice' ? 'Voice Provider' :
                  category === 'video' ? 'Video Generation' :
+                 category === 'gemini' ? 'Gemini Configuration' :
                  'Video Assembly Service'}
               </h2>
               <div className="grid gap-4">

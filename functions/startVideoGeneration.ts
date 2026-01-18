@@ -89,9 +89,15 @@ async function generateVideo(base44, project, jobId) {
     const voiceIntegration = getIntegration(project.selected_providers.voice);
     const videoIntegration = getIntegration(project.selected_providers.video);
     const assemblyIntegration = getIntegration(project.selected_providers.assembly);
+    const geminiIntegration = allIntegrations.find(i => i.provider_type === 'gemini_api');
 
     if (!llmIntegration || !voiceIntegration || !videoIntegration || !assemblyIntegration) {
       throw new Error('Missing required integrations');
+    }
+
+    // Warn if Gemini key missing for Veo
+    if (videoIntegration.provider_type === 'video_veo' && !geminiIntegration) {
+      console.warn('[WARNING] Veo selected but no Gemini API key configured. Clip downloads may fail.');
     }
 
     if (startStepIndex <= 0) {
@@ -237,7 +243,8 @@ async function generateVideo(base44, project, jobId) {
             providerType: videoIntegration.provider_type,
             prompt: scene.prompt,
             duration: clampedDuration,
-            aspectRatio: project.aspect_ratio
+            aspectRatio: project.aspect_ratio,
+            geminiApiKey: geminiIntegration?.api_key
           });
 
           if (!clipResult.data.videoUrl) {

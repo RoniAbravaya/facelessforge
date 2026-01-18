@@ -92,14 +92,14 @@ async function pollRunwayGeneration(taskId, apiKey, maxAttempts = 60) {
   throw new Error('Runway generation timeout after 5 minutes');
 }
 
-async function pollVeoGeneration(operationName, apiKey, base44, maxAttempts = 72) {
+async function pollVeoGeneration(operationName, veoApiKey, geminiApiKey, base44, maxAttempts = 72) {
   for (let i = 0; i < maxAttempts; i++) {
     // Veo can take up to 6 minutes, poll every 5 seconds
     await new Promise(resolve => setTimeout(resolve, 5000));
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/${operationName}`, {
       headers: {
-        'x-goog-api-key': apiKey,
+        'x-goog-api-key': veoApiKey,
         'Content-Type': 'application/json'
       }
     });
@@ -119,28 +119,63 @@ async function pollVeoGeneration(operationName, apiKey, base44, maxAttempts = 72
         throw new Error(`Veo generation failed: ${data.error.message}`);
       }
       
-      // Extract inline video data (base64)
+      // Check for inline data first
       const inlineData = data.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.inlineData?.data;
-      if (!inlineData) {
-        console.error('Veo completed but no inline video data:', JSON.stringify(data, null, 2));
-        throw new Error('Veo generation completed but no inline video data found');
+      if (inlineData) {
+        console.log('[Veo] Clip generated -> extracting bytes from inline base64');
+        console.log(`[Veo] Base64 data size: ${inlineData.length} chars (~${Math.round(inlineData.length * 0.75 / 1024 / 1024)} MB)`);
+        
+        const videoBytes = Uint8Array.from(atob(inlineData), c => c.charCodeAt(0));
+        console.log(`[Veo] Converted to bytes: ${videoBytes.length} bytes (${(videoBytes.length / 1024 / 1024).toFixed(2)} MB)`);
+        
+        const blob = new Blob([videoBytes], { type: 'video/mp4' });
+        const uploadResult = await base44.asServiceRole.integrations.Core.UploadFile({ file: blob });
+        console.log(`[Veo] ✓ Clip uploaded (inline) -> Base44 URL: ${uploadResult.file_url}`);
+        return uploadResult.file_url;
       }
       
-      console.log('[Veo] Clip generated -> extracting bytes from base64');
-      console.log(`[Veo] Base64 data size: ${inlineData.length} chars (~${Math.round(inlineData.length * 0.75 / 1024 / 1024)} MB)`);
+      // Otherwise, download from Files API using Gemini API key
+      const fileUri = data.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
+      if (!fileUri) {
+        console.error('Veo completed but no video data:', JSON.stringify(data, null, 2));
+        throw new Error('Veo generation completed but no video data found');
+      }
       
-      // Convert base64 to bytes
-      const videoBytes = Uint8Array.from(atob(inlineData), c => c.charCodeAt(0));
-      console.log(`[Veo] Converted to bytes: ${videoBytes.length} bytes (${(videoBytes.length / 1024 / 1024).toFixed(2)} MB)`);
+      console.log(`[Veo] Clip generated -> downloading from Files API: ${fileUri}`);
+      
+      if (!geminiApiKey) {
+        throw new Error('Gemini API Key required to download Veo clips. Add it in Integrations page.');
+      }
+      
+      // Download video using Gemini API key
+      const downloadUrl = `https://generativelanguage.googleapis.com/v1beta/${fileUri}`;
+      console.log(`[Veo] Downloading with Gemini key from: ${downloadUrl}`);
+      
+      const downloadResponse = await fetch(downloadUrl, {
+        headers: {
+          'x-goog-api-key': geminiApiKey
+        }
+      });
+      
+      if (!downloadResponse.ok) {
+        const errorText = await downloadResponse.text();
+        console.error(`[Veo] Download failed (${downloadResponse.status}):`, errorText);
+        if (downloadResponse.status === 403) {
+          throw new Error('Gemini API disabled. Enable Generative Language API in your Google Cloud project and add the key in Integrations.');
+        }
+        throw new Error(`Failed to download Veo clip: ${downloadResponse.status}`);
+      }
+      
+      const videoBytes = new Uint8Array(await downloadResponse.arrayBuffer());
+      console.log(`[Veo] Downloaded ${videoBytes.length} bytes (${(videoBytes.length / 1024 / 1024).toFixed(2)} MB)`);
       
       // Upload to Base44 storage
       console.log('[Veo] Uploading clip to Base44 storage...');
       const blob = new Blob([videoBytes], { type: 'video/mp4' });
       const uploadResult = await base44.asServiceRole.integrations.Core.UploadFile({ file: blob });
-      const base44Url = uploadResult.file_url;
+      console.log(`[Veo] ✓ Clip uploaded (downloaded) -> Base44 URL: ${uploadResult.file_url}`);
       
-      console.log(`[Veo] ✓ Clip uploaded -> Base44 URL: ${base44Url}`);
-      return base44Url;
+      return uploadResult.file_url;
     }
   }
 
@@ -153,7 +188,7 @@ Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
   
   try {
-    const { apiKey, providerType, prompt, duration, aspectRatio } = await req.json();
+    const { apiKey, providerType, prompt, duration, aspectRatio, geminiApiKey } = await req.json();
 
     // Ensure duration is an integer and valid (4-8 seconds)
     const parsedDuration = Number(duration);
@@ -370,8 +405,8 @@ Deno.serve(async (req) => {
 
       console.log(`Started Veo generation: ${operationName}`);
 
-      // Poll for completion - returns Base44 URL after inline upload
-      const videoUrl = await pollVeoGeneration(operationName, apiKey, base44);
+      // Poll for completion - returns Base44 URL after download/upload
+      const videoUrl = await pollVeoGeneration(operationName, apiKey, geminiApiKey, base44);
 
       console.log(`Veo generation completed with Base44 URL: ${videoUrl}`);
       return Response.json({ videoUrl });
