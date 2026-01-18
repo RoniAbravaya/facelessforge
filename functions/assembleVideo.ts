@@ -262,43 +262,80 @@ Deno.serve(async (req) => {
   try {
     const { apiKey, providerType, clipUrls, audioUrl, scenes, aspectRatio, title } = await req.json();
 
-    console.log(`Assembling video with ${providerType}`);
+    console.log('=== VIDEO ASSEMBLY START ===');
+    console.log(`Provider: ${providerType}`);
+    console.log(`API Key length: ${apiKey?.length}`);
+    console.log(`Clip URLs count: ${clipUrls?.length}`);
+    console.log(`Audio URL: ${audioUrl}`);
+    console.log(`Scenes count: ${scenes?.length}`);
+    console.log(`Aspect Ratio: ${aspectRatio}`);
+    console.log(`Clip URLs:`, clipUrls);
+    console.log(`Scenes:`, JSON.stringify(scenes, null, 2));
+
+    if (!apiKey) {
+      throw new Error(`API key is missing for provider: ${providerType}`);
+    }
+
+    if (!clipUrls || clipUrls.length === 0) {
+      throw new Error('No video clips provided for assembly');
+    }
+
+    if (!audioUrl) {
+      throw new Error('Audio URL is missing');
+    }
+
+    if (!scenes || scenes.length === 0) {
+      throw new Error('No scenes provided');
+    }
 
     let videoUrl;
 
     switch (providerType) {
       case 'assembly_shotstack':
+        console.log('[Shotstack] Starting assembly...');
         videoUrl = await assembleShotstack(apiKey, clipUrls, audioUrl, scenes, aspectRatio, title);
         break;
       
       case 'assembly_creatomate':
+        console.log('[Creatomate] Starting assembly...');
         videoUrl = await assembleCreatomate(apiKey, clipUrls, audioUrl, scenes, aspectRatio);
         break;
       
       case 'assembly_bannerbear':
+        console.log('[Bannerbear] Starting assembly...');
         videoUrl = await assembleBannerbear(apiKey, clipUrls, audioUrl, scenes);
         break;
       
       case 'assembly_json2video':
+        console.log('[JSON2Video] Starting assembly...');
         videoUrl = await assembleJson2Video(apiKey, clipUrls, audioUrl, scenes, aspectRatio);
         break;
       
       case 'assembly_plainly':
+        console.log('[Plainly] Starting assembly...');
         videoUrl = await assemblePlainly(apiKey, clipUrls, audioUrl, scenes);
         break;
       
       default:
-        throw new Error('Unsupported assembly provider');
+        throw new Error(`Unsupported assembly provider: ${providerType}`);
     }
+
+    console.log('=== VIDEO ASSEMBLY SUCCESS ===');
+    console.log(`Final video URL: ${videoUrl}`);
 
     return Response.json({ videoUrl });
 
   } catch (error) {
-    console.error('Assemble video error:', error);
-    console.error('Error details:', error.response?.data || error.toString());
+    console.error('=== VIDEO ASSEMBLY ERROR ===');
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    console.error('Error response data:', error.response?.data);
+    console.error('Provider:', providerType);
+    console.error('Clip count:', clipUrls?.length);
+    
     return Response.json({ 
       error: error.message,
-      details: error.response?.data || error.toString(),
+      details: error.response?.data || error.stack,
       provider: providerType,
       clipCount: clipUrls?.length
     }, { status: 500 });
