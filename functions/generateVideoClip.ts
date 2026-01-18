@@ -124,12 +124,13 @@ async function pollVeoGeneration(operationName, veoApiKey, geminiApiKey, base44,
       if (inlineData) {
         console.log('[Veo] Clip generated -> extracting bytes from inline base64');
         console.log(`[Veo] Base64 data size: ${inlineData.length} chars (~${Math.round(inlineData.length * 0.75 / 1024 / 1024)} MB)`);
-        
+
         const videoBytes = Uint8Array.from(atob(inlineData), c => c.charCodeAt(0));
         console.log(`[Veo] Converted to bytes: ${videoBytes.length} bytes (${(videoBytes.length / 1024 / 1024).toFixed(2)} MB)`);
-        
-        const blob = new Blob([videoBytes], { type: 'video/mp4' });
-        const uploadResult = await base44.asServiceRole.integrations.Core.UploadFile({ file: blob });
+
+        // Must use File (not Blob) for Core.UploadFile - matches generateVoiceover.js pattern
+        const videoFile = new File([videoBytes], 'veo_clip.mp4', { type: 'video/mp4' });
+        const uploadResult = await base44.asServiceRole.integrations.Core.UploadFile({ file: videoFile });
         console.log(`[Veo] ✓ Clip uploaded (inline) -> Base44 URL: ${uploadResult.file_url}`);
         return uploadResult.file_url;
       }
@@ -192,10 +193,10 @@ async function pollVeoGeneration(operationName, veoApiKey, geminiApiKey, base44,
       const videoBytes = new Uint8Array(await downloadResponse.arrayBuffer());
       console.log(`[Veo] Downloaded ${videoBytes.length} bytes (${(videoBytes.length / 1024 / 1024).toFixed(2)} MB)`);
 
-      // Upload to Base44 storage
+      // Upload to Base44 storage - must use File (not Blob) for Core.UploadFile
       console.log('[Veo] Uploading clip to Base44 storage...');
-      const blob = new Blob([videoBytes], { type: 'video/mp4' });
-      const uploadResult = await base44.asServiceRole.integrations.Core.UploadFile({ file: blob });
+      const videoFile = new File([videoBytes], 'veo_clip.mp4', { type: 'video/mp4' });
+      const uploadResult = await base44.asServiceRole.integrations.Core.UploadFile({ file: videoFile });
       console.log(`[Veo] ✓ Clip uploaded (downloaded) -> Base44 URL: ${uploadResult.file_url}`);
 
       return uploadResult.file_url;
