@@ -73,13 +73,13 @@ async function assembleShotstack(apiKey, clipUrls, audioUrl, scenes, aspectRatio
   const renderData = await renderResponse.json();
   const renderId = renderData.response.id;
 
-  console.log(`Shotstack render started: ${renderId}`);
+  console.log(`[Shotstack] Render started: ${renderId}`);
 
   // Poll for completion
   for (let i = 0; i < 120; i++) {
     await new Promise(resolve => setTimeout(resolve, 5000));
 
-    const statusResponse = await fetch(`https://api.shotstack.io/v1/render/${renderId}`, {
+    const statusResponse = await fetch(`${baseUrl}/render/${renderId}`, {
       headers: { 'x-api-key': apiKey }
     });
 
