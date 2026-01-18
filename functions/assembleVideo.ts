@@ -1,109 +1,239 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
 
-// Shotstack Assembly
-async function assembleShotstack(apiKey, clipUrls, audioUrl, scenes, aspectRatio, title) {
-  // Build size object based on aspect ratio
-  const size = aspectRatio === '9:16' 
-    ? { width: 1080, height: 1920 } 
-    : aspectRatio === '16:9' 
-    ? { width: 1920, height: 1080 } 
-    : { width: 1080, height: 1080 };
+// Generate correlation ID for error tracking
+function generateCorrelationId() {
+  return `assemble_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
 
-  const timeline = {
-    soundtrack: {
-      src: audioUrl,
-      effect: 'fadeOut'
-    },
-    tracks: [
-      {
-        clips: clipUrls.map((url, idx) => {
-          const scene = scenes[idx];
-          const startTime = scenes.slice(0, idx).reduce((sum, s) => sum + s.duration, 0);
-          
-          return {
-            asset: {
-              type: 'video',
-              src: url
-            },
-            start: startTime,
-            length: scene.duration
-          };
-        })
-      }
-    ]
-  };
+// Check FFmpeg availability
+async function checkFFmpeg() {
+  try {
+    const command = new Deno.Command('ffmpeg', { args: ['-version'] });
+    const { code } = await command.output();
+    return code === 0;
+  } catch {
+    return false;
+  }
+}
 
-  const output = {
-    format: 'mp4',
-    size: size
-  };
+// Validate URL accessibility
+async function validateUrl(url, type) {
+  try {
+    const response = await fetch(url, { method: 'HEAD' });
+    if (!response.ok) {
+      return { valid: false, error: `HTTP ${response.status}` };
+    }
+    const contentLength = response.headers.get('content-length');
+    if (!contentLength || parseInt(contentLength) === 0) {
+      return { valid: false, error: 'Empty file' };
+    }
+    return { valid: true };
+  } catch (error) {
+    return { valid: false, error: error.message };
+  }
+}
 
-  // Detect if using sandbox key (starts with lowercase letter) vs production (starts with uppercase)
-  const isSandbox = apiKey && apiKey[0] === apiKey[0].toLowerCase();
-  const baseUrl = isSandbox ? 'https://api.shotstack.io/edit/stage' : 'https://api.shotstack.io/edit/v1';
+// Download file to temp directory
+async function downloadFile(url, destPath) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to download ${url}: HTTP ${response.status}`);
+  }
+  const buffer = await response.arrayBuffer();
+  await Deno.writeFile(destPath, new Uint8Array(buffer));
+}
+
+// Run FFmpeg command with error capture
+async function runFFmpeg(args, correlationId) {
+  console.log(`[${correlationId}][FFmpeg] Running: ffmpeg ${args.join(' ')}`);
   
-  console.log(`[Shotstack] Using ${isSandbox ? 'SANDBOX' : 'PRODUCTION'} environment`);
-  console.log('[Shotstack] Request body:', JSON.stringify({ timeline, output }, null, 2));
-
-  // Submit render
-  const renderResponse = await fetch(`${baseUrl}/render`, {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ timeline, output })
+  const command = new Deno.Command('ffmpeg', { 
+    args,
+    stdout: 'piped',
+    stderr: 'piped'
   });
-
-  console.log(`[Shotstack] Response status: ${renderResponse.status}`);
-  console.log(`[Shotstack] Response headers:`, Object.fromEntries(renderResponse.headers.entries()));
-
-  if (!renderResponse.ok) {
-    const errorText = await renderResponse.text();
-    console.error('[Shotstack] Error response body:', errorText);
-    console.error('[Shotstack] Request was:', JSON.stringify({ timeline, output }, null, 2));
-    console.error('[Shotstack] Clip URLs:', clipUrls);
-    console.error('[Shotstack] Audio URL:', audioUrl);
-    console.error('[Shotstack] Scenes:', JSON.stringify(scenes, null, 2));
-    try {
-      const error = JSON.parse(errorText);
-      console.error('[Shotstack] Parsed error:', JSON.stringify(error, null, 2));
-      throw new Error(`Shotstack error (${renderResponse.status}): ${error.message || error.error?.message || JSON.stringify(error)}`);
-    } catch (parseError) {
-      console.error('[Shotstack] Could not parse error as JSON');
-      throw new Error(`Shotstack error (${renderResponse.status}): ${errorText}`);
-    }
-  }
-
-  const renderData = await renderResponse.json();
-  console.log(`[Shotstack] Full response data:`, JSON.stringify(renderData, null, 2));
   
-  const renderId = renderData.response?.id;
-  if (!renderId) {
-    throw new Error('Shotstack response missing render ID');
+  const { code, stdout, stderr } = await command.output();
+  const stderrText = new TextDecoder().decode(stderr);
+  const stdoutText = new TextDecoder().decode(stdout);
+  
+  if (code !== 0) {
+    console.error(`[${correlationId}][FFmpeg] Failed with code ${code}`);
+    console.error(`[${correlationId}][FFmpeg] stderr:`, stderrText.slice(-2000));
+    throw new Error(`FFmpeg failed: ${stderrText.slice(-500)}`);
   }
+  
+  console.log(`[${correlationId}][FFmpeg] Success`);
+  return { stdout: stdoutText, stderr: stderrText };
+}
 
-  console.log(`[Shotstack] Render started: ${renderId}`);
-
-  // Poll for completion
-  for (let i = 0; i < 120; i++) {
-    await new Promise(resolve => setTimeout(resolve, 5000));
-
-    const statusResponse = await fetch(`${baseUrl}/render/${renderId}`, {
-      headers: { 'x-api-key': apiKey }
-    });
-
-    const statusData = await statusResponse.json();
-    const status = statusData.response.status;
-
-    if (status === 'done') {
-      return statusData.response.url;
-    } else if (status === 'failed') {
-      throw new Error('Shotstack render failed');
+// FFmpeg-based Assembly
+async function assembleWithFFmpeg(clipUrls, audioUrl, scenes, aspectRatio, jobId) {
+  const correlationId = generateCorrelationId();
+  console.log(`[${correlationId}] Starting FFmpeg assembly`);
+  
+  // Check FFmpeg availability
+  const hasFFmpeg = await checkFFmpeg();
+  if (!hasFFmpeg) {
+    throw {
+      errorCode: 'ffmpeg_not_installed',
+      message: 'FFmpeg is not available in this environment',
+      correlationId
+    };
+  }
+  
+  // Validate all input URLs
+  console.log(`[${correlationId}] Validating ${clipUrls.length} clip URLs and audio URL`);
+  for (let i = 0; i < clipUrls.length; i++) {
+    const validation = await validateUrl(clipUrls[i], 'video');
+    if (!validation.valid) {
+      throw {
+        errorCode: 'missing_artifact',
+        message: `Clip ${i} is not accessible: ${validation.error}`,
+        details: { url: clipUrls[i], index: i },
+        correlationId
+      };
     }
   }
-
-  throw new Error('Shotstack render timeout');
+  
+  const audioValidation = await validateUrl(audioUrl, 'audio');
+  if (!audioValidation.valid) {
+    throw {
+      errorCode: 'missing_artifact',
+      message: `Audio is not accessible: ${audioValidation.error}`,
+      details: { url: audioUrl },
+      correlationId
+    };
+  }
+  
+  // Setup temp directory
+  const tmpDir = `/tmp/${jobId}`;
+  try {
+    await Deno.mkdir(tmpDir, { recursive: true });
+  } catch (error) {
+    if (!(error instanceof Deno.errors.AlreadyExists)) {
+      throw error;
+    }
+  }
+  
+  // Determine dimensions based on aspect ratio
+  const dimensions = aspectRatio === '9:16' 
+    ? { width: 720, height: 1280 } 
+    : aspectRatio === '16:9' 
+    ? { width: 1280, height: 720 } 
+    : { width: 720, height: 720 };
+  
+  // Download and normalize each clip
+  console.log(`[${correlationId}] Downloading and normalizing ${clipUrls.length} clips`);
+  const normalizedClips = [];
+  
+  for (let i = 0; i < clipUrls.length; i++) {
+    const clipPath = `${tmpDir}/clip${i}.mp4`;
+    const normPath = `${tmpDir}/norm${i}.mp4`;
+    
+    console.log(`[${correlationId}] Processing clip ${i + 1}/${clipUrls.length}`);
+    
+    // Download clip
+    await downloadFile(clipUrls[i], clipPath);
+    
+    // Normalize: resize, set fps, re-encode to consistent format
+    try {
+      await runFFmpeg([
+        '-i', clipPath,
+        '-vf', `scale=${dimensions.width}:${dimensions.height}:force_original_aspect_ratio=decrease,pad=${dimensions.width}:${dimensions.height}:(ow-iw)/2:(oh-ih)/2,fps=30`,
+        '-c:v', 'libx264',
+        '-preset', 'fast',
+        '-pix_fmt', 'yuv420p',
+        '-an', // Remove audio from clips
+        '-y',
+        normPath
+      ], correlationId);
+      
+      normalizedClips.push(normPath);
+    } catch (error) {
+      throw {
+        errorCode: 'ffmpeg_normalize_failed',
+        message: `Failed to normalize clip ${i}: ${error.message}`,
+        details: { clipIndex: i, url: clipUrls[i] },
+        correlationId
+      };
+    }
+  }
+  
+  // Create concat file
+  const concatListPath = `${tmpDir}/concat.txt`;
+  const concatContent = normalizedClips.map(path => `file '${path.split('/').pop()}'`).join('\n');
+  await Deno.writeTextFile(concatListPath, concatContent);
+  console.log(`[${correlationId}] Created concat list with ${normalizedClips.length} files`);
+  
+  // Concatenate clips
+  const concatPath = `${tmpDir}/concat.mp4`;
+  try {
+    await runFFmpeg([
+      '-f', 'concat',
+      '-safe', '0',
+      '-i', concatListPath,
+      '-c', 'copy',
+      '-y',
+      concatPath
+    ], correlationId);
+  } catch (error) {
+    throw {
+      errorCode: 'ffmpeg_concat_failed',
+      message: `Failed to concatenate clips: ${error.message}`,
+      correlationId
+    };
+  }
+  
+  // Download voiceover
+  console.log(`[${correlationId}] Downloading voiceover`);
+  const audioExt = audioUrl.includes('.wav') ? 'wav' : 'mp3';
+  const voiceoverPath = `${tmpDir}/voiceover.${audioExt}`;
+  await downloadFile(audioUrl, voiceoverPath);
+  
+  // Mix voiceover with video
+  const finalPath = `${tmpDir}/final.mp4`;
+  console.log(`[${correlationId}] Mixing audio with video`);
+  try {
+    await runFFmpeg([
+      '-i', concatPath,
+      '-i', voiceoverPath,
+      '-c:v', 'copy',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-shortest',
+      '-y',
+      finalPath
+    ], correlationId);
+  } catch (error) {
+    throw {
+      errorCode: 'ffmpeg_audio_mix_failed',
+      message: `Failed to mix audio: ${error.message}`,
+      correlationId
+    };
+  }
+  
+  // Upload final video
+  console.log(`[${correlationId}] Uploading final video`);
+  const base44 = createClientFromRequest({ headers: new Headers() });
+  
+  const finalVideoFile = await Deno.readFile(finalPath);
+  const blob = new Blob([finalVideoFile], { type: 'video/mp4' });
+  const formData = new FormData();
+  formData.append('file', blob, 'final.mp4');
+  
+  const uploadResult = await base44.asServiceRole.integrations.Core.UploadFile({ file: blob });
+  const finalVideoUrl = uploadResult.file_url;
+  
+  // Cleanup temp files
+  try {
+    await Deno.remove(tmpDir, { recursive: true });
+  } catch {
+    // Non-critical if cleanup fails
+  }
+  
+  console.log(`[${correlationId}] Assembly complete: ${finalVideoUrl}`);
+  return { videoUrl: finalVideoUrl, correlationId };
 }
 
 // Creatomate Assembly
@@ -284,85 +414,88 @@ async function assemblePlainly(apiKey, clipUrls, audioUrl, scenes) {
 }
 
 Deno.serve(async (req) => {
+  const correlationId = generateCorrelationId();
+  
   try {
-    const { apiKey, providerType, clipUrls, audioUrl, scenes, aspectRatio, title } = await req.json();
+    const { clipUrls, audioUrl, scenes, aspectRatio, jobId } = await req.json();
 
-    console.log('=== VIDEO ASSEMBLY START ===');
-    console.log(`Provider: ${providerType}`);
-    console.log(`API Key length: ${apiKey?.length}`);
-    console.log(`Clip URLs count: ${clipUrls?.length}`);
-    console.log(`Audio URL: ${audioUrl}`);
-    console.log(`Scenes count: ${scenes?.length}`);
-    console.log(`Aspect Ratio: ${aspectRatio}`);
-    console.log(`Clip URLs:`, clipUrls);
-    console.log(`Scenes:`, JSON.stringify(scenes, null, 2));
+    console.log(`[${correlationId}] === VIDEO ASSEMBLY START ===`);
+    console.log(`[${correlationId}] Clip URLs count: ${clipUrls?.length}`);
+    console.log(`[${correlationId}] Audio URL: ${audioUrl}`);
+    console.log(`[${correlationId}] Scenes count: ${scenes?.length}`);
+    console.log(`[${correlationId}] Aspect Ratio: ${aspectRatio}`);
+    console.log(`[${correlationId}] Job ID: ${jobId}`);
 
-    if (!apiKey) {
-      throw new Error(`API key is missing for provider: ${providerType}`);
-    }
-
+    // Validate inputs
     if (!clipUrls || clipUrls.length === 0) {
-      throw new Error('No video clips provided for assembly');
+      throw {
+        errorCode: 'invalid_input',
+        message: 'No video clips provided for assembly',
+        correlationId
+      };
     }
 
     if (!audioUrl) {
-      throw new Error('Audio URL is missing');
+      throw {
+        errorCode: 'invalid_input',
+        message: 'Audio URL is missing',
+        correlationId
+      };
     }
 
     if (!scenes || scenes.length === 0) {
-      throw new Error('No scenes provided');
+      throw {
+        errorCode: 'invalid_input',
+        message: 'No scenes provided',
+        correlationId
+      };
     }
 
-    let videoUrl;
-
-    switch (providerType) {
-      case 'assembly_shotstack':
-        console.log('[Shotstack] Starting assembly...');
-        videoUrl = await assembleShotstack(apiKey, clipUrls, audioUrl, scenes, aspectRatio, title);
-        break;
-      
-      case 'assembly_creatomate':
-        console.log('[Creatomate] Starting assembly...');
-        videoUrl = await assembleCreatomate(apiKey, clipUrls, audioUrl, scenes, aspectRatio);
-        break;
-      
-      case 'assembly_bannerbear':
-        console.log('[Bannerbear] Starting assembly...');
-        videoUrl = await assembleBannerbear(apiKey, clipUrls, audioUrl, scenes);
-        break;
-      
-      case 'assembly_json2video':
-        console.log('[JSON2Video] Starting assembly...');
-        videoUrl = await assembleJson2Video(apiKey, clipUrls, audioUrl, scenes, aspectRatio);
-        break;
-      
-      case 'assembly_plainly':
-        console.log('[Plainly] Starting assembly...');
-        videoUrl = await assemblePlainly(apiKey, clipUrls, audioUrl, scenes);
-        break;
-      
-      default:
-        throw new Error(`Unsupported assembly provider: ${providerType}`);
+    if (!jobId) {
+      throw {
+        errorCode: 'invalid_input',
+        message: 'Job ID is required',
+        correlationId
+      };
     }
 
-    console.log('=== VIDEO ASSEMBLY SUCCESS ===');
-    console.log(`Final video URL: ${videoUrl}`);
+    // Use FFmpeg-based assembly
+    const result = await assembleWithFFmpeg(clipUrls, audioUrl, scenes, aspectRatio, jobId);
 
-    return Response.json({ videoUrl });
+    console.log(`[${correlationId}] === VIDEO ASSEMBLY SUCCESS ===`);
+    console.log(`[${correlationId}] Final video URL: ${result.videoUrl}`);
+
+    return Response.json({ 
+      ok: true,
+      videoUrl: result.videoUrl,
+      jobId,
+      correlationId: result.correlationId
+    });
 
   } catch (error) {
-    console.error('=== VIDEO ASSEMBLY ERROR ===');
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
-    console.error('Error response data:', error.response?.data);
-    console.error('Provider:', providerType);
-    console.error('Clip count:', clipUrls?.length);
+    console.error(`[${correlationId}] === VIDEO ASSEMBLY ERROR ===`);
+    console.error(`[${correlationId}] Error:`, error);
     
+    // Handle structured errors
+    if (error.errorCode) {
+      return Response.json({
+        ok: false,
+        step: 'video_assembly',
+        errorCode: error.errorCode,
+        message: error.message,
+        details: error.details || {},
+        correlationId: error.correlationId || correlationId
+      }, { status: 500 });
+    }
+    
+    // Handle unexpected errors
     return Response.json({ 
-      error: error.message,
-      details: error.response?.data || error.stack,
-      provider: providerType,
-      clipCount: clipUrls?.length
+      ok: false,
+      step: 'video_assembly',
+      errorCode: 'unknown_error',
+      message: error.message || 'Unknown error occurred',
+      details: { stack: error.stack },
+      correlationId
     }, { status: 500 });
   }
 });

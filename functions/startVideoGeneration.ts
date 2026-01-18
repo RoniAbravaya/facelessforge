@@ -274,25 +274,46 @@ async function generateVideo(base44, project, jobId) {
       await updateJobProgress(base44, jobId, projectId, 'running', currentStep, 85);
       await logEvent(base44, jobId, 'video_assembly', 'step_started', 'Assembling final video');
 
-      const assemblyResult = await base44.asServiceRole.functions.invoke('assembleVideo', {
-        apiKey: assemblyIntegration.api_key,
-        providerType: assemblyIntegration.provider_type,
-        clipUrls,
-        audioUrl: voiceResult.data.audioUrl,
-        scenes,
-        aspectRatio: project.aspect_ratio,
-        title: project.title
-      });
+      try {
+        const assemblyResult = await base44.asServiceRole.functions.invoke('assembleVideo', {
+          clipUrls,
+          audioUrl: voiceResult.data.audioUrl,
+          scenes,
+          aspectRatio: project.aspect_ratio,
+          jobId
+        });
 
-      await base44.asServiceRole.entities.Artifact.create({
-        job_id: jobId,
-        project_id: projectId,
-        artifact_type: 'final_video',
-        file_url: assemblyResult.data.videoUrl,
-        duration: project.duration
-      });
+        // Check for structured error response
+        if (assemblyResult.data.ok === false) {
+          const errorMsg = `${assemblyResult.data.errorCode}: ${assemblyResult.data.message}`;
+          console.error(`[Assembly Error] ${errorMsg}`, assemblyResult.data.details);
+          throw new Error(errorMsg);
+        }
 
-      await logEvent(base44, jobId, 'video_assembly', 'step_finished', 'Final video assembled', 95);
+        await base44.asServiceRole.entities.Artifact.create({
+          job_id: jobId,
+          project_id: projectId,
+          artifact_type: 'final_video',
+          file_url: assemblyResult.data.videoUrl,
+          duration: project.duration
+        });
+
+        await logEvent(base44, jobId, 'video_assembly', 'step_finished', 'Final video assembled', 95);
+      } catch (assemblyError) {
+        // Log detailed assembly error
+        const errorDetails = assemblyError.response?.data || { message: assemblyError.message };
+        console.error('[Video Assembly Failed]', errorDetails);
+        await logEvent(base44, jobId, 'video_assembly', 'step_failed', 
+          errorDetails.message || assemblyError.message, 
+          null, 
+          { 
+            errorCode: errorDetails.errorCode,
+            correlationId: errorDetails.correlationId,
+            details: errorDetails.details 
+          }
+        );
+        throw assemblyError;
+      }
     } else {
       console.log('Skipping video assembly - already completed');
     }
