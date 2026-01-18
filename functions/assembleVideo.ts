@@ -26,8 +26,7 @@ async function assembleShotstack(apiKey, clipUrls, audioUrl, scenes, aspectRatio
               src: url
             },
             start: startTime,
-            length: scene.duration,
-            fit: 'cover'
+            length: scene.duration
           };
         })
       }
@@ -36,8 +35,7 @@ async function assembleShotstack(apiKey, clipUrls, audioUrl, scenes, aspectRatio
 
   const output = {
     format: 'mp4',
-    size: size,
-    fps: 30
+    size: size
   };
 
   // Detect if using sandbox key (starts with lowercase letter) vs production (starts with uppercase)
