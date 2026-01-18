@@ -307,13 +307,9 @@ Deno.serve(async (req) => {
       console.log(`[Veo Request] Final duration: ${finalDuration}, Type: ${typeof finalDuration}, IsValid: ${finalDuration >= 4 && finalDuration <= 8}`);
 
       const requestBody = {
-        instances: [{
-          prompt: prompt
-        }],
-        parameters: {
-          aspectRatio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '16:9' ? '16:9' : '16:9',
-          durationSeconds: finalDuration
-        }
+        prompt: prompt,
+        aspectRatio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '16:9' ? '16:9' : '16:9',
+        durationSeconds: finalDuration
       };
       console.log(`[Veo Request Body]`, JSON.stringify(requestBody));
 
