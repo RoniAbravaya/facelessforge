@@ -246,13 +246,24 @@ export default function ClientAssembly({ assemblyData, projectId, jobId, onCompl
       // Step 6: Upload
       setStatus('uploading');
       setMessage('Uploading final video...');
-      addLog('Uploading to cloud storage...', 'info');
+      addLog(`Uploading final video (${(finalData.length / 1024 / 1024).toFixed(2)} MB)...`, 'info');
 
-      const blob = new Blob([finalData], { type: 'video/mp4' });
-      const uploadResult = await base44.integrations.Core.UploadFile({ file: blob });
+      // Create a proper File object (not just Blob)
+      const file = new File([finalData], 'final.mp4', { type: 'video/mp4' });
+      addLog(`File created: ${file.name}, size: ${file.size} bytes`, 'info');
+      
+      try {
+        const uploadResult = await base44.integrations.Core.UploadFile({ file: file });
+        const finalVideoUrl = uploadResult.file_url;
+        setProgress(95);
+        addLog(`Upload complete: ${finalVideoUrl}`, 'success');
+      } catch (uploadError) {
+        addLog(`Upload failed: ${uploadError.message}`, 'error');
+        console.error('Upload error details:', uploadError);
+        throw new Error(`Failed to upload video: ${uploadError.message}`);
+      }
+      
       const finalVideoUrl = uploadResult.file_url;
-      setProgress(95);
-      addLog('Upload complete', 'success');
 
       // Save artifact
       addLog('Saving artifact metadata...', 'info');
