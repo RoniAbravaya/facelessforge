@@ -56,14 +56,21 @@ async function assembleShotstack(apiKey, clipUrls, audioUrl, scenes, aspectRatio
   });
 
   console.log(`[Shotstack] Response status: ${renderResponse.status}`);
+  console.log(`[Shotstack] Response headers:`, Object.fromEntries(renderResponse.headers.entries()));
 
   if (!renderResponse.ok) {
     const errorText = await renderResponse.text();
-    console.error('[Shotstack] Error response:', errorText);
+    console.error('[Shotstack] Error response body:', errorText);
+    console.error('[Shotstack] Request was:', JSON.stringify({ timeline, output }, null, 2));
+    console.error('[Shotstack] Clip URLs:', clipUrls);
+    console.error('[Shotstack] Audio URL:', audioUrl);
+    console.error('[Shotstack] Scenes:', JSON.stringify(scenes, null, 2));
     try {
       const error = JSON.parse(errorText);
-      throw new Error(`Shotstack error (${renderResponse.status}): ${error.message || JSON.stringify(error)}`);
+      console.error('[Shotstack] Parsed error:', JSON.stringify(error, null, 2));
+      throw new Error(`Shotstack error (${renderResponse.status}): ${error.message || error.error?.message || JSON.stringify(error)}`);
     } catch (parseError) {
+      console.error('[Shotstack] Could not parse error as JSON');
       throw new Error(`Shotstack error (${renderResponse.status}): ${errorText}`);
     }
   }
