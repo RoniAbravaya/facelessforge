@@ -70,7 +70,7 @@ export default function ProjectDetails() {
     queryKey: ['jobs', projectId],
     queryFn: () => base44.entities.Job.filter({ project_id: projectId }, '-created_date'),
     enabled: !!projectId,
-    refetchInterval: 3000
+    refetchInterval: 1000  // Increased frequency to catch status changes immediately
   });
 
   const { data: artifacts = [] } = useQuery({
