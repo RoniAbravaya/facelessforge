@@ -150,23 +150,87 @@ async function generateVideo(base44, project, jobId) {
       });
 
       scenes = scenePlanResult.data.scenes;
+
+      // Scale scene durations to match project duration exactly
+      const targetDuration = project.duration;
+      const sceneCount = scenes.length;
+      const minTotalDuration = sceneCount * 4; // Minimum 4s per scene
+      const maxTotalDuration = sceneCount * 8; // Maximum 8s per scene
+
+      if (targetDuration < minTotalDuration) {
+        throw new Error(`Target duration ${targetDuration}s is too short for ${sceneCount} scenes. Minimum required: ${minTotalDuration}s (4s per scene). Please increase duration or reduce scene count.`);
+      }
+
+      if (targetDuration > maxTotalDuration) {
+        await logEvent(base44, jobId, 'scene_planning', 'step_progress', `Target duration ${targetDuration}s exceeds max ${maxTotalDuration}s for ${sceneCount} scenes. Capping at maximum.`, 40, { warning: true });
+        console.warn(`[Scene Scaling] Target ${targetDuration}s > max ${maxTotalDuration}s, will cap at max`);
+      }
+
+      // Calculate current total and scaling factor
+      const currentTotal = scenes.reduce((sum, s) => sum + s.duration, 0);
+      const scalingFactor = targetDuration / currentTotal;
+
+      console.log(`[Scene Scaling] Current total: ${currentTotal}s, Target: ${targetDuration}s, Factor: ${scalingFactor.toFixed(3)}`);
+      await logEvent(base44, jobId, 'scene_planning', 'step_progress', `Scaling ${sceneCount} scenes to match ${targetDuration}s duration`, 38);
+
+      // Apply scaling and clamping
+      let scaledScenes = scenes.map((s, idx) => {
+        const scaled = s.duration * scalingFactor;
+        const clamped = Math.max(4, Math.min(8, scaled));
+        console.log(`[Scene ${idx + 1}] Original: ${s.duration.toFixed(2)}s -> Scaled: ${scaled.toFixed(2)}s -> Clamped: ${clamped.toFixed(2)}s`);
+        return { ...s, duration: clamped };
+      });
+
+      // Calculate actual total after clamping
+      let actualTotal = scaledScenes.reduce((sum, s) => sum + s.duration, 0);
+      const difference = targetDuration - actualTotal;
+
+      console.log(`[Scene Scaling] After clamping: ${actualTotal.toFixed(2)}s, Difference: ${difference.toFixed(2)}s`);
+
+      // Distribute the difference across scenes that have room
+      if (Math.abs(difference) > 0.1) {
+        await logEvent(base44, jobId, 'scene_planning', 'step_progress', `Adjusting scene durations to match exactly ${targetDuration}s`, 40);
+
+        const adjustment = difference / sceneCount;
+        scaledScenes = scaledScenes.map((s, idx) => {
+          let newDuration = s.duration + adjustment;
+          // Re-clamp to 4-8 range
+          newDuration = Math.max(4, Math.min(8, newDuration));
+          console.log(`[Scene ${idx + 1}] Adjusted: ${s.duration.toFixed(2)}s -> ${newDuration.toFixed(2)}s`);
+          return { ...s, duration: newDuration };
+        });
+
+        actualTotal = scaledScenes.reduce((sum, s) => sum + s.duration, 0);
+        console.log(`[Scene Scaling] Final total: ${actualTotal.toFixed(2)}s (target: ${targetDuration}s)`);
+      }
+
+      // Final rounding to match target exactly
+      const finalDifference = targetDuration - actualTotal;
+      if (Math.abs(finalDifference) > 0.01) {
+        // Add/subtract the remaining difference to the longest scene (which has most room)
+        const longestIdx = scaledScenes.reduce((maxIdx, s, idx, arr) => 
+          s.duration > arr[maxIdx].duration ? idx : maxIdx, 0);
+
+        scaledScenes[longestIdx].duration += finalDifference;
+        scaledScenes[longestIdx].duration = Math.max(4, Math.min(8, scaledScenes[longestIdx].duration));
+        console.log(`[Scene Scaling] Applied final adjustment of ${finalDifference.toFixed(3)}s to scene ${longestIdx + 1}`);
+      }
+
+      scenes = scaledScenes;
+      const finalTotal = scenes.reduce((sum, s) => sum + s.duration, 0);
+      console.log(`[Scene Scaling] ✓ Complete. Final total: ${finalTotal.toFixed(2)}s (target: ${targetDuration}s)`);
+
       await base44.asServiceRole.entities.Artifact.create({
         job_id: jobId,
         project_id: projectId,
         artifact_type: 'scene_plan',
-        metadata: { scenes }
+        metadata: { scenes, scalingApplied: true, targetDuration, actualTotal: finalTotal }
       });
 
-      await logEvent(base44, jobId, 'scene_planning', 'step_finished', `Scene plan created with ${scenes.length} scenes`, 45, { sceneCount: scenes.length });
+      await logEvent(base44, jobId, 'scene_planning', 'step_finished', `Scene plan created with ${scenes.length} scenes (total: ${finalTotal.toFixed(1)}s)`, 45, { sceneCount: scenes.length, totalDuration: finalTotal });
     } else {
       const sceneArtifacts = await base44.asServiceRole.entities.Artifact.filter({ job_id: jobId, artifact_type: 'scene_plan' });
       scenes = sceneArtifacts[0]?.metadata?.scenes;
-      // Ensure all scene durations are within 4-8 second bounds (for video generation APIs)
-      if (scenes) {
-        scenes.forEach(s => {
-          s.duration = Math.max(4, Math.min(8, Math.round(s.duration)));
-        });
-      }
       console.log('Skipping scene planning - already completed');
     }
 
