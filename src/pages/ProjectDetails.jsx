@@ -29,7 +29,7 @@ export default function ProjectDetails() {
       return projects[0];
     },
     enabled: !!projectId,
-    refetchInterval: (data) => data?.status === 'generating' ? 3000 : false
+    refetchInterval: 1000  // Always refetch to catch status changes
   });
 
   const retryMutation = useMutation({
