@@ -129,17 +129,18 @@ export default function ProjectDetails() {
 
   // Check if client assembly is needed
   const checkForClientAssembly = async () => {
-    if (!latestJob || clientAssemblyData) return;
+    const currentJob = jobs[0];
+    if (!currentJob || clientAssemblyData) return;
     
-    if (latestJob.current_step === 'video_assembly' && latestJob.status === 'running') {
+    if (currentJob.current_step === 'video_assembly' && currentJob.status === 'running') {
       // Get clip and voiceover artifacts
       const clipArtifacts = await base44.entities.Artifact.filter({
-        job_id: latestJob.id,
+        job_id: currentJob.id,
         artifact_type: 'video_clip'
       });
       
       const voiceArtifact = await base44.entities.Artifact.filter({
-        job_id: latestJob.id,
+        job_id: currentJob.id,
         artifact_type: 'voiceover'
       });
       
@@ -164,7 +165,7 @@ export default function ProjectDetails() {
 
   useEffect(() => {
     checkForClientAssembly();
-  }, [latestJob?.current_step, latestJob?.status]);
+  }, [jobs[0]?.current_step, jobs[0]?.status]);
 
   const latestJob = jobs[0];
 
