@@ -101,21 +101,32 @@ export default function ClientAssembly({ assemblyData, projectId, jobId, onCompl
   };
 
   const fetchWithProxy = async (url) => {
-    try {
-      // Try direct fetch first
-      const response = await fetch(url);
-      if (response.ok) {
-        return await response.arrayBuffer();
+    const isGoogleUrl = url.includes('generativelanguage.googleapis.com');
+
+    // For Google URLs, ALWAYS use proxy with projectId
+    if (isGoogleUrl) {
+      addLog(`Using proxy for Google URL (projectId: ${projectId})`, 'info');
+      const proxyUrl = `/api/functions/proxyMedia?projectId=${encodeURIComponent(projectId)}&url=${encodeURIComponent(url)}`;
+      const response = await fetch(proxyUrl);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        addLog(`Proxy failed: ${errorData.errorCode || 'unknown'} - ${errorData.error}`, 'error');
+
+        if (errorData.errorCode === 'service_disabled') {
+          throw new Error('Your Gemini API key\'s project must have Generative Language API enabled. Update your key in Integrations.');
+        }
+        throw new Error(errorData.error || `Proxy fetch failed: ${response.status}`);
       }
-    } catch (error) {
-      addLog(`Direct fetch failed for ${url}, trying proxy...`, 'warning');
+
+      return await response.arrayBuffer();
     }
 
-    // Fallback to proxy
-    const proxyUrl = `/api/functions/proxyMedia?url=${encodeURIComponent(url)}`;
-    const response = await fetch(proxyUrl);
+    // For non-Google URLs (like Base44 storage), fetch directly
+    addLog(`Direct fetch for Base44 URL`, 'info');
+    const response = await fetch(url);
     if (!response.ok) {
-      throw new Error(`Proxy fetch failed: ${response.status}`);
+      throw new Error(`Direct fetch failed: ${response.status}`);
     }
     return await response.arrayBuffer();
   };
@@ -136,13 +147,19 @@ export default function ClientAssembly({ assemblyData, projectId, jobId, onCompl
       const clipFiles = [];
       for (let i = 0; i < clipUrls.length; i++) {
         setMessage(`Downloading clip ${i + 1}/${clipUrls.length}...`);
-        addLog(`Downloading clip ${i + 1}/${clipUrls.length}`, 'info');
+        addLog(`Downloading clip ${i + 1}/${clipUrls.length}: ${clipUrls[i].substring(0, 60)}...`, 'info');
         setProgress(Math.round(((i + 1) / clipUrls.length) * 15));
-        
-        const clipData = await fetchWithProxy(clipUrls[i]);
-        const clipName = `clip${i}.mp4`;
-        await ffmpeg.writeFile(clipName, new Uint8Array(clipData));
-        clipFiles.push(clipName);
+
+        try {
+          const clipData = await fetchWithProxy(clipUrls[i]);
+          const clipName = `clip${i}.mp4`;
+          await ffmpeg.writeFile(clipName, new Uint8Array(clipData));
+          clipFiles.push(clipName);
+          addLog(`✓ Clip ${i + 1} downloaded (${(clipData.byteLength / 1024 / 1024).toFixed(2)} MB)`, 'success');
+        } catch (clipError) {
+          addLog(`✗ Clip ${i + 1} download failed: ${clipError.message}`, 'error');
+          throw new Error(`Failed to download clip ${i + 1}: ${clipError.message}`);
+        }
       }
 
       // Download voiceover
