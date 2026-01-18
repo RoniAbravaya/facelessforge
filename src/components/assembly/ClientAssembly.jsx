@@ -4,24 +4,46 @@ import { fetchFile, toBlobURL } from '@ffmpeg/util';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { AlertCircle, Video, Loader2, Download } from 'lucide-react';
+import { AlertCircle, Video, Loader2, Download, Play } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { toast } from 'sonner';
 
 export default function ClientAssembly({ assemblyData, projectId, jobId, onComplete, onError }) {
-  const [status, setStatus] = useState('initializing'); // initializing, downloading, normalizing, concatenating, mixing, uploading, complete, error
+  const [status, setStatus] = useState('idle'); // idle, initializing, downloading, normalizing, concatenating, mixing, uploading, complete, error
   const [progress, setProgress] = useState(0);
-  const [message, setMessage] = useState('Initializing FFmpeg...');
+  const [message, setMessage] = useState('Ready to assemble video in your browser');
   const [errorMessage, setErrorMessage] = useState(null);
+  const [logs, setLogs] = useState([]);
   const ffmpegRef = useRef(null);
   const [isFFmpegLoaded, setIsFFmpegLoaded] = useState(false);
+  const [manualStart, setManualStart] = useState(false);
 
+  const addLog = (msg, type = 'info') => {
+    setLogs(prev => [...prev, { message: msg, type, time: new Date().toLocaleTimeString() }]);
+  };
+
+  // Auto-start after 2 seconds or show manual button
   useEffect(() => {
-    loadFFmpeg();
-  }, []);
+    if (assemblyData && !manualStart) {
+      const timer = setTimeout(() => {
+        setManualStart(true);
+        addLog('Ready to start assembly', 'info');
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [assemblyData]);
+
+  const startAssembly = async () => {
+    setManualStart(false);
+    await loadFFmpeg();
+  };
 
   const loadFFmpeg = async () => {
     try {
+      setStatus('initializing');
+      setMessage('Loading FFmpeg...');
+      addLog('Initializing FFmpeg...', 'info');
+      
       const ffmpeg = new FFmpeg();
       ffmpegRef.current = ffmpeg;
 
@@ -30,12 +52,13 @@ export default function ClientAssembly({ assemblyData, projectId, jobId, onCompl
       });
 
       ffmpeg.on('progress', ({ progress: prog }) => {
-        // FFmpeg progress is 0-1, convert to percentage
         const percent = Math.round(prog * 100);
-        setProgress(percent);
+        if (percent > progress) {
+          setProgress(percent);
+        }
       });
 
-      // Load FFmpeg
+      // Load FFmpeg from CDN
       const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
       await ffmpeg.load({
         coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
@@ -43,25 +66,24 @@ export default function ClientAssembly({ assemblyData, projectId, jobId, onCompl
       });
 
       setIsFFmpegLoaded(true);
-      setMessage('FFmpeg loaded. Starting assembly...');
-      toast.success('FFmpeg loaded successfully');
+      setMessage('FFmpeg loaded successfully');
+      addLog('FFmpeg loaded successfully', 'success');
+      toast.success('FFmpeg loaded');
+      
+      // Start assembly
+      await assembleVideo();
     } catch (error) {
       console.error('FFmpeg load error:', error);
+      addLog(`Failed to load FFmpeg: ${error.message}`, 'error');
       setStatus('error');
-      setErrorMessage(`Failed to load FFmpeg: ${error.message}`);
+      setErrorMessage(`Failed to load FFmpeg: ${error.message}. Try a desktop browser with more memory.`);
       onError?.(error);
     }
   };
 
-  useEffect(() => {
-    if (isFFmpegLoaded && assemblyData) {
-      assembleVideo();
-    }
-  }, [isFFmpegLoaded, assemblyData]);
-
   const downloadAsZip = async () => {
+    addLog('Starting manual downloads...', 'info');
     toast.info('Downloading clips and voiceover...');
-    // Create simple download links as fallback
     const links = [
       ...assemblyData.clipUrls.map((url, i) => ({ url, name: `clip_${i + 1}.mp4` })),
       { url: assemblyData.voiceoverUrl, name: 'voiceover.mp3' }
@@ -74,7 +96,28 @@ export default function ClientAssembly({ assemblyData, projectId, jobId, onCompl
       a.click();
       await new Promise(resolve => setTimeout(resolve, 500));
     }
+    addLog('Downloads started', 'success');
     toast.success('Download started for all files');
+  };
+
+  const fetchWithProxy = async (url) => {
+    try {
+      // Try direct fetch first
+      const response = await fetch(url);
+      if (response.ok) {
+        return await response.arrayBuffer();
+      }
+    } catch (error) {
+      addLog(`Direct fetch failed for ${url}, trying proxy...`, 'warning');
+    }
+
+    // Fallback to proxy
+    const proxyUrl = `/api/functions/proxyMedia?url=${encodeURIComponent(url)}`;
+    const response = await fetch(proxyUrl);
+    if (!response.ok) {
+      throw new Error(`Proxy fetch failed: ${response.status}`);
+    }
+    return await response.arrayBuffer();
   };
 
   const assembleVideo = async () => {
@@ -86,32 +129,38 @@ export default function ClientAssembly({ assemblyData, projectId, jobId, onCompl
       
       // Step 1: Download clips
       setStatus('downloading');
+      addLog(`Starting download of ${clipUrls.length} clips...`, 'info');
       setMessage(`Downloading ${clipUrls.length} clips...`);
       setProgress(0);
 
       const clipFiles = [];
       for (let i = 0; i < clipUrls.length; i++) {
         setMessage(`Downloading clip ${i + 1}/${clipUrls.length}...`);
+        addLog(`Downloading clip ${i + 1}/${clipUrls.length}`, 'info');
         setProgress(Math.round(((i + 1) / clipUrls.length) * 15));
         
-        const clipData = await fetchFile(clipUrls[i]);
+        const clipData = await fetchWithProxy(clipUrls[i]);
         const clipName = `clip${i}.mp4`;
-        await ffmpeg.writeFile(clipName, clipData);
+        await ffmpeg.writeFile(clipName, new Uint8Array(clipData));
         clipFiles.push(clipName);
       }
 
       // Download voiceover
       setMessage('Downloading voiceover...');
-      const voiceoverData = await fetchFile(voiceoverUrl);
+      addLog('Downloading voiceover...', 'info');
+      const voiceoverData = await fetchWithProxy(voiceoverUrl);
       const voiceoverExt = voiceoverUrl.includes('.wav') ? 'wav' : 'mp3';
-      await ffmpeg.writeFile(`voiceover.${voiceoverExt}`, voiceoverData);
+      await ffmpeg.writeFile(`voiceover.${voiceoverExt}`, new Uint8Array(voiceoverData));
       setProgress(20);
+      addLog('All downloads complete', 'success');
 
       // Step 2: Normalize clips
       setStatus('normalizing');
+      addLog('Starting video normalization...', 'info');
       const normalizedFiles = [];
       for (let i = 0; i < clipFiles.length; i++) {
         setMessage(`Normalizing clip ${i + 1}/${clipFiles.length}...`);
+        addLog(`Normalizing clip ${i + 1}/${clipFiles.length}`, 'info');
         setProgress(20 + Math.round(((i + 1) / clipFiles.length) * 30));
         
         const normName = `norm${i}.mp4`;
@@ -127,16 +176,19 @@ export default function ClientAssembly({ assemblyData, projectId, jobId, onCompl
         ]);
         normalizedFiles.push(normName);
       }
+      addLog('All clips normalized', 'success');
 
       // Step 3: Create concat list
       setStatus('concatenating');
       setMessage('Concatenating clips...');
+      addLog('Creating concat list...', 'info');
       setProgress(55);
 
       const concatList = normalizedFiles.map(f => `file '${f}'`).join('\n');
       await ffmpeg.writeFile('concat.txt', new TextEncoder().encode(concatList));
 
       // Concatenate
+      addLog('Concatenating clips...', 'info');
       await ffmpeg.exec([
         '-f', 'concat',
         '-safe', '0',
@@ -146,10 +198,12 @@ export default function ClientAssembly({ assemblyData, projectId, jobId, onCompl
         'concat.mp4'
       ]);
       setProgress(70);
+      addLog('Clips concatenated', 'success');
 
       // Step 4: Mix audio
       setStatus('mixing');
       setMessage('Mixing audio with video...');
+      addLog('Mixing audio track...', 'info');
       setProgress(75);
 
       await ffmpeg.exec([
@@ -163,30 +217,39 @@ export default function ClientAssembly({ assemblyData, projectId, jobId, onCompl
         'final.mp4'
       ]);
       setProgress(85);
+      addLog('Audio mixed successfully', 'success');
 
       // Step 5: Read final video
       setMessage('Reading final video...');
+      addLog('Reading assembled video from memory...', 'info');
       const finalData = await ffmpeg.readFile('final.mp4');
       setProgress(90);
+      addLog(`Final video size: ${(finalData.length / 1024 / 1024).toFixed(2)} MB`, 'info');
 
       // Step 6: Upload
       setStatus('uploading');
       setMessage('Uploading final video...');
+      addLog('Uploading to cloud storage...', 'info');
 
       const blob = new Blob([finalData], { type: 'video/mp4' });
       const uploadResult = await base44.integrations.Core.UploadFile({ file: blob });
       const finalVideoUrl = uploadResult.file_url;
       setProgress(95);
+      addLog('Upload complete', 'success');
 
       // Save artifact
+      addLog('Saving artifact metadata...', 'info');
       await base44.entities.Artifact.create({
         job_id: jobId,
         project_id: projectId,
         artifact_type: 'final_video',
-        file_url: finalVideoUrl
+        file_url: finalVideoUrl,
+        file_size: finalData.length,
+        duration: assemblyData.duration
       });
 
       // Update job and project status
+      addLog('Updating job status...', 'info');
       await base44.entities.Job.update(jobId, {
         status: 'completed',
         current_step: 'completed',
@@ -203,27 +266,34 @@ export default function ClientAssembly({ assemblyData, projectId, jobId, onCompl
       setProgress(100);
       setStatus('complete');
       setMessage('Video assembly complete!');
+      addLog('✅ Assembly complete!', 'success');
       toast.success('Video assembled successfully!');
       onComplete?.(finalVideoUrl);
 
     } catch (error) {
       console.error('Assembly error:', error);
+      addLog(`❌ Error: ${error.message}`, 'error');
       setStatus('error');
       
+      let userMessage = error.message;
       if (error.message?.includes('memory') || error.message?.includes('heap')) {
-        setErrorMessage('Assembly failed: Not enough memory. Try on a desktop computer or download clips manually.');
-      } else {
-        setErrorMessage(`Assembly failed: ${error.message}`);
+        userMessage = 'Not enough memory. Try on a desktop computer or download clips manually.';
+      } else if (error.message?.includes('fetch') || error.message?.includes('network')) {
+        userMessage = 'Network error. Check your connection and try again.';
       }
+      
+      setErrorMessage(`Assembly failed: ${userMessage}`);
       
       await base44.entities.Job.update(jobId, {
         status: 'failed',
-        error_message: error.message
+        current_step: 'video_assembly',
+        error_message: userMessage
       });
 
       await base44.entities.Project.update(projectId, {
         status: 'failed',
-        error_message: error.message
+        current_step: 'video_assembly',
+        error_message: userMessage
       });
 
       onError?.(error);
@@ -238,11 +308,27 @@ export default function ClientAssembly({ assemblyData, projectId, jobId, onCompl
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-blue-900">
           <Video className="w-5 h-5" />
-          Client-Side Video Assembly
+          Browser-Based Video Assembly
         </CardTitle>
       </CardHeader>
-      <CardContent>
-        {status === 'error' ? (
+      <CardContent className="space-y-4">
+        {status === 'idle' && manualStart ? (
+          <div className="space-y-3">
+            <p className="text-sm text-blue-800">
+              Video clips are ready. Click below to start assembling in your browser.
+            </p>
+            <Button
+              onClick={startAssembly}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              <Play className="w-4 h-4 mr-2" />
+              Start Assembly
+            </Button>
+            <p className="text-xs text-blue-700">
+              💡 Recommended: Use desktop Chrome/Edge with at least 4GB RAM
+            </p>
+          </div>
+        ) : status === 'error' ? (
           <div className="space-y-4">
             <div className="flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
@@ -269,9 +355,6 @@ export default function ClientAssembly({ assemblyData, projectId, jobId, onCompl
                 </div>
               </div>
             </div>
-            <p className="text-xs text-blue-700">
-              💡 Tip: For best results, use a desktop computer with at least 4GB RAM
-            </p>
           </div>
         ) : status === 'complete' ? (
           <div className="space-y-3">
@@ -282,13 +365,36 @@ export default function ClientAssembly({ assemblyData, projectId, jobId, onCompl
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-              <p className="text-sm text-blue-800">{message}</p>
+              <p className="text-sm text-blue-800 font-medium">{message}</p>
             </div>
             <Progress value={progress} className="h-2" />
             <p className="text-xs text-blue-600">{progress}% complete</p>
             <p className="text-xs text-blue-700">
-              ⚠️ Keep this tab open during assembly (may take several minutes)
+              ⚠️ Keep this tab open (assembly takes 2-5 minutes)
             </p>
+          </div>
+        )}
+
+        {/* Assembly Logs */}
+        {logs.length > 0 && (
+          <div className="mt-4 border-t border-blue-200 pt-3">
+            <p className="text-xs font-semibold text-blue-900 mb-2">Assembly Log:</p>
+            <div className="space-y-1 max-h-32 overflow-y-auto text-xs">
+              {logs.slice(-10).map((log, i) => (
+                <div
+                  key={i}
+                  className={`flex gap-2 ${
+                    log.type === 'error' ? 'text-red-700' :
+                    log.type === 'success' ? 'text-green-700' :
+                    log.type === 'warning' ? 'text-amber-700' :
+                    'text-blue-700'
+                  }`}
+                >
+                  <span className="opacity-50">{log.time}</span>
+                  <span>{log.message}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </CardContent>

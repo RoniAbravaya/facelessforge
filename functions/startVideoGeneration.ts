@@ -291,6 +291,11 @@ async function generateVideo(base44, project, jobId) {
             85,
             { 
               mode: 'client_ffmpeg_wasm',
+              clipUrls: clipUrls,
+              voiceoverUrl: voiceResult.data.audioUrl,
+              aspectRatio: project.aspect_ratio,
+              jobId: jobId,
+              projectId: projectId,
               clipCount: clipUrls.length,
               correlationId: assemblyResult.data.correlationId
             }

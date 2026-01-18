@@ -117,55 +117,68 @@ export default function ProjectDetails() {
           console.log('Event data:', event.data.data);
           
           // Check if client-side assembly is needed
-          if (event.data.data.mode === 'client_ffmpeg_wasm') {
-            checkForClientAssembly();
+          if (event.data.data.mode === 'client_ffmpeg_wasm' && !clientAssemblyData) {
+            console.log('[Client Assembly] Triggered from event');
+            const data = event.data.data;
+            setClientAssemblyData({
+              clipUrls: data.clipUrls,
+              voiceoverUrl: data.voiceoverUrl,
+              aspectRatio: data.aspectRatio,
+              jobId: data.jobId,
+              projectId: data.projectId,
+              correlationId: data.correlationId,
+              output: {
+                width: data.aspectRatio === '9:16' ? 720 : data.aspectRatio === '16:9' ? 1280 : 720,
+                height: data.aspectRatio === '9:16' ? 1280 : data.aspectRatio === '16:9' ? 720 : 720,
+                fps: 30,
+                format: 'mp4'
+              }
+            });
           }
         }
       }
     });
 
     return unsubscribe;
-  }, [jobs[0]?.id]);
+  }, [jobs[0]?.id, clientAssemblyData]);
 
-  // Check if client assembly is needed
-  const checkForClientAssembly = async () => {
-    const currentJob = jobs[0];
-    if (!currentJob || clientAssemblyData) return;
-    
-    if (currentJob.current_step === 'video_assembly' && currentJob.status === 'running') {
-      // Get clip and voiceover artifacts
-      const clipArtifacts = await base44.entities.Artifact.filter({
-        job_id: currentJob.id,
-        artifact_type: 'video_clip'
-      });
-      
-      const voiceArtifact = await base44.entities.Artifact.filter({
-        job_id: currentJob.id,
-        artifact_type: 'voiceover'
-      });
-      
-      if (clipArtifacts.length > 0 && voiceArtifact.length > 0) {
-        const clipUrls = clipArtifacts
-          .sort((a, b) => a.scene_index - b.scene_index)
-          .map(c => c.file_url);
-        
-        setClientAssemblyData({
-          clipUrls,
-          voiceoverUrl: voiceArtifact[0].file_url,
-          output: {
-            width: project.aspect_ratio === '9:16' ? 720 : project.aspect_ratio === '16:9' ? 1280 : 720,
-            height: project.aspect_ratio === '9:16' ? 1280 : project.aspect_ratio === '16:9' ? 720 : 720,
-            fps: 30,
-            format: 'mp4'
-          }
-        });
-      }
-    }
-  };
-
+  // Check if client assembly is needed (fallback if event doesn't trigger)
   useEffect(() => {
-    checkForClientAssembly();
-  }, [jobs[0]?.current_step, jobs[0]?.status]);
+    const checkClientAssembly = async () => {
+      const currentJob = jobs[0];
+      if (!currentJob || clientAssemblyData) return;
+      
+      if (currentJob.current_step === 'video_assembly' && currentJob.status === 'running') {
+        // Get latest event to check for client assembly mode
+        const recentEvents = await base44.entities.JobEvent.filter(
+          { job_id: currentJob.id, step: 'video_assembly' },
+          '-created_date',
+          1
+        );
+        
+        if (recentEvents[0]?.data?.mode === 'client_ffmpeg_wasm') {
+          const data = recentEvents[0].data;
+          console.log('[Client Assembly] Triggered from polling', data);
+          setClientAssemblyData({
+            clipUrls: data.clipUrls,
+            voiceoverUrl: data.voiceoverUrl,
+            aspectRatio: data.aspectRatio,
+            jobId: data.jobId,
+            projectId: data.projectId,
+            correlationId: data.correlationId,
+            output: {
+              width: data.aspectRatio === '9:16' ? 720 : data.aspectRatio === '16:9' ? 1280 : 720,
+              height: data.aspectRatio === '9:16' ? 1280 : data.aspectRatio === '16:9' ? 720 : 720,
+              fps: 30,
+              format: 'mp4'
+            }
+          });
+        }
+      }
+    };
+
+    checkClientAssembly();
+  }, [jobs[0]?.current_step, jobs[0]?.status, clientAssemblyData]);
 
   const latestJob = jobs[0];
 
