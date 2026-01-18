@@ -438,30 +438,65 @@ Deno.serve(async (req) => {
       console.log(`API Key first 50 chars: ${apiKey.substring(0, 50)}`);
       console.log(`API Key last 50 chars: ${apiKey.substring(Math.max(0, apiKey.length - 50))}`);
 
-      // Set timeout to prevent indefinite hangs when provider doesn't respond
-      // Timeout set to 6 minutes - can be tuned based on provider performance
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6 * 60 * 1000);
-
-      console.log('Making fetch request...');
+      // Retry logic for transient errors
+      const maxRetries = 3;
+      const retryDelays = [2000, 5000, 10000]; // milliseconds
       let response;
-      try {
-        response = await fetch(requestUrl, {
-          method: 'POST',
-          headers: lumaHeaders,
-          body: requestBody,
-          signal: controller.signal
-        });
-        clearTimeout(timeout);
-      } catch (fetchError) {
-        clearTimeout(timeout);
-        if (fetchError.name === 'AbortError') {
-          throw new Error('Luma generation request timed out after 6 minutes');
-        }
-        throw fetchError;
-      }
+      let lastError;
 
-      console.log(`Fetch completed, status: ${response.status}`);
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        // Set timeout to prevent indefinite hangs when provider doesn't respond
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 6 * 60 * 1000);
+
+        console.log(`[${new Date().toISOString()}] Making fetch request (attempt ${attempt + 1}/${maxRetries + 1})...`);
+
+        try {
+          response = await fetch(requestUrl, {
+            method: 'POST',
+            headers: lumaHeaders,
+            body: requestBody,
+            signal: controller.signal
+          });
+          clearTimeout(timeout);
+
+          console.log(`[${new Date().toISOString()}] Fetch completed, status: ${response.status}`);
+
+          // Check for transient errors (502, 503, 504)
+          if ([502, 503, 504].includes(response.status)) {
+            const errorText = await response.text();
+            console.warn(`[${new Date().toISOString()}] ⚠️ Luma transient error ${response.status} on attempt ${attempt + 1}/${maxRetries + 1}`);
+
+            if (attempt < maxRetries) {
+              const delay = retryDelays[attempt];
+              console.warn(`[${new Date().toISOString()}] Retrying in ${delay}ms...`);
+              await new Promise(res => setTimeout(res, delay));
+              continue;
+            } else {
+              throw new Error(`Luma API unavailable (${response.status}). Please try again later.`);
+            }
+          }
+
+          // If we got here, status is not a transient error, break the retry loop
+          break;
+        } catch (fetchError) {
+          clearTimeout(timeout);
+          if (fetchError.name === 'AbortError') {
+            throw new Error('Luma generation request timed out after 6 minutes');
+          }
+          lastError = fetchError;
+
+          // Only retry on network errors, not on other errors
+          if (attempt < maxRetries && (fetchError.message?.includes('fetch') || fetchError.message?.includes('network'))) {
+            const delay = retryDelays[attempt];
+            console.warn(`[${new Date().toISOString()}] ⚠️ Network error on attempt ${attempt + 1}, retrying in ${delay}ms...`);
+            await new Promise(res => setTimeout(res, delay));
+            continue;
+          }
+
+          throw fetchError;
+        }
+      }
 
       console.log(`Response Status: ${response.status} ${response.statusText}`);
       console.log(`All Response Headers:`, {
@@ -520,33 +555,64 @@ Deno.serve(async (req) => {
       return Response.json({ videoUrl });
 
     } else if (providerType === 'video_runway') {
-      // Set timeout to prevent indefinite hangs when provider doesn't respond
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6 * 60 * 1000);
-
-      // Start Runway Gen-2 generation
+      // Retry logic for transient errors
+      const maxRetries = 3;
+      const retryDelays = [2000, 5000, 10000];
       let response;
-      try {
-        response = await fetch('https://api.runwayml.com/v1/gen2', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            prompt_text: prompt,
-            duration: Math.min(duration, 10),
-            ratio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '16:9' ? '16:9' : '1:1'
-          }),
-          signal: controller.signal
-        });
-        clearTimeout(timeout);
-      } catch (fetchError) {
-        clearTimeout(timeout);
-        if (fetchError.name === 'AbortError') {
-          throw new Error('Runway generation request timed out after 6 minutes');
+
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 6 * 60 * 1000);
+
+        console.log(`[${new Date().toISOString()}] [Runway] Making request (attempt ${attempt + 1}/${maxRetries + 1})...`);
+
+        try {
+          response = await fetch('https://api.runwayml.com/v1/gen2', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              prompt_text: prompt,
+              duration: Math.min(duration, 10),
+              ratio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '16:9' ? '16:9' : '1:1'
+            }),
+            signal: controller.signal
+          });
+          clearTimeout(timeout);
+
+          // Check for transient errors
+          if ([502, 503, 504].includes(response.status)) {
+            const errorText = await response.text();
+            console.warn(`[${new Date().toISOString()}] ⚠️ Runway transient error ${response.status} on attempt ${attempt + 1}/${maxRetries + 1}`);
+
+            if (attempt < maxRetries) {
+              const delay = retryDelays[attempt];
+              console.warn(`[${new Date().toISOString()}] Retrying in ${delay}ms...`);
+              await new Promise(res => setTimeout(res, delay));
+              continue;
+            } else {
+              throw new Error(`Runway API unavailable (${response.status}). Please try again later.`);
+            }
+          }
+
+          break;
+        } catch (fetchError) {
+          clearTimeout(timeout);
+          if (fetchError.name === 'AbortError') {
+            throw new Error('Runway generation request timed out after 6 minutes');
+          }
+
+          if (attempt < maxRetries && (fetchError.message?.includes('fetch') || fetchError.message?.includes('network'))) {
+            const delay = retryDelays[attempt];
+            console.warn(`[${new Date().toISOString()}] ⚠️ Network error on attempt ${attempt + 1}, retrying in ${delay}ms...`);
+            await new Promise(res => setTimeout(res, delay));
+            continue;
+          }
+
+          throw fetchError;
         }
-        throw fetchError;
       }
 
       if (!response.ok) {
@@ -601,28 +667,60 @@ Deno.serve(async (req) => {
       };
       console.log(`[Veo Request Body]`, JSON.stringify(requestBody));
 
-      // Set timeout to prevent indefinite hangs when provider doesn't respond
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6 * 60 * 1000);
-
+      // Retry logic for transient errors
+      const maxRetries = 3;
+      const retryDelays = [2000, 5000, 10000];
       let response;
-      try {
-        response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning', {
-          method: 'POST',
-          headers: {
-            'x-goog-api-key': apiKey,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal
-        });
-        clearTimeout(timeout);
-      } catch (fetchError) {
-        clearTimeout(timeout);
-        if (fetchError.name === 'AbortError') {
-          throw new Error('Veo generation request timed out after 6 minutes');
+
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 6 * 60 * 1000);
+
+        console.log(`[${new Date().toISOString()}] [Veo] Making request (attempt ${attempt + 1}/${maxRetries + 1})...`);
+
+        try {
+          response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning', {
+            method: 'POST',
+            headers: {
+              'x-goog-api-key': apiKey,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody),
+            signal: controller.signal
+          });
+          clearTimeout(timeout);
+
+          // Check for transient errors
+          if ([502, 503, 504].includes(response.status)) {
+            const errorText = await response.text();
+            console.warn(`[${new Date().toISOString()}] ⚠️ Veo transient error ${response.status} on attempt ${attempt + 1}/${maxRetries + 1}`);
+
+            if (attempt < maxRetries) {
+              const delay = retryDelays[attempt];
+              console.warn(`[${new Date().toISOString()}] Retrying in ${delay}ms...`);
+              await new Promise(res => setTimeout(res, delay));
+              continue;
+            } else {
+              throw new Error(`Veo API unavailable (${response.status}). Please try again later.`);
+            }
+          }
+
+          break;
+        } catch (fetchError) {
+          clearTimeout(timeout);
+          if (fetchError.name === 'AbortError') {
+            throw new Error('Veo generation request timed out after 6 minutes');
+          }
+
+          if (attempt < maxRetries && (fetchError.message?.includes('fetch') || fetchError.message?.includes('network'))) {
+            const delay = retryDelays[attempt];
+            console.warn(`[${new Date().toISOString()}] ⚠️ Network error on attempt ${attempt + 1}, retrying in ${delay}ms...`);
+            await new Promise(res => setTimeout(res, delay));
+            continue;
+          }
+
+          throw fetchError;
         }
-        throw fetchError;
       }
 
       if (!response.ok) {
