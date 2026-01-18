@@ -238,6 +238,17 @@ Deno.serve(async (req) => {
       console.log(`API key type: ${typeof apiKey}`);
       console.log(`API key length: ${apiKey?.length}`);
 
+      // Luma API only accepts 5s, 9s, or 10s - map requested duration to supported values
+      let lumaDuration;
+      if (durationNum <= 5) {
+        lumaDuration = 5;
+      } else if (durationNum <= 9) {
+        lumaDuration = 9;
+      } else {
+        lumaDuration = 10;
+      }
+      console.log(`[Luma Duration Mapping] Requested: ${durationNum}s -> Using: ${lumaDuration}s (Luma supports only 5s, 9s, 10s)`);
+
       // Start Luma generation
       const lumaHeaders = {
         'Authorization': `Bearer ${apiKey}`,
@@ -249,7 +260,7 @@ Deno.serve(async (req) => {
       const lumaBody = {
         model: 'ray-2',
         prompt: prompt,
-        duration: `${durationNum}s`,
+        duration: `${lumaDuration}s`,
         resolution: '720p'
       };
 
