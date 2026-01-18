@@ -40,6 +40,8 @@ async function assembleShotstack(apiKey, clipUrls, audioUrl, scenes, aspectRatio
     fps: 30
   };
 
+  console.log('[Shotstack] Request body:', JSON.stringify({ timeline, output }, null, 2));
+
   // Submit render
   const renderResponse = await fetch('https://api.shotstack.io/v1/render', {
     method: 'POST',
@@ -50,9 +52,17 @@ async function assembleShotstack(apiKey, clipUrls, audioUrl, scenes, aspectRatio
     body: JSON.stringify({ timeline, output })
   });
 
+  console.log(`[Shotstack] Response status: ${renderResponse.status}`);
+
   if (!renderResponse.ok) {
-    const error = await renderResponse.json();
-    throw new Error(`Shotstack error: ${error.message || 'Unknown error'}`);
+    const errorText = await renderResponse.text();
+    console.error('[Shotstack] Error response:', errorText);
+    try {
+      const error = JSON.parse(errorText);
+      throw new Error(`Shotstack error (${renderResponse.status}): ${error.message || JSON.stringify(error)}`);
+    } catch (parseError) {
+      throw new Error(`Shotstack error (${renderResponse.status}): ${errorText}`);
+    }
   }
 
   const renderData = await renderResponse.json();
