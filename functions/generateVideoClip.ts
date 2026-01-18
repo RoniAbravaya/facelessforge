@@ -303,8 +303,17 @@ Deno.serve(async (req) => {
 
     } else if (providerType === 'video_veo') {
       // Start Google Veo generation via Gemini API
-      const finalDuration = Math.max(4, Math.min(8, Math.round(Number(durationNum))));
-      console.log(`[Veo Request] Final duration: ${finalDuration}, Type: ${typeof finalDuration}, IsValid: ${finalDuration >= 4 && finalDuration <= 8}`);
+      // Veo only accepts "4", "6", or "8" as string values
+      const rawDuration = Math.round(Number(durationNum));
+      let finalDuration = "8"; // default to 8 seconds
+      if (rawDuration <= 4) {
+        finalDuration = "4";
+      } else if (rawDuration <= 6) {
+        finalDuration = "6";
+      } else {
+        finalDuration = "8";
+      }
+      console.log(`[Veo Request] Raw duration: ${rawDuration}, Final duration: ${finalDuration} (string)`);
 
       const requestBody = {
         instances: [{
