@@ -38,7 +38,12 @@ Deno.serve(async (req) => {
       job_id: jobId,
       level: 'info',
       step: 'video_clip_generation',
-      data: { generationId, sceneIndex, state }
+      data: { 
+        provider: 'luma',
+        generation_id: generationId,
+        scene_index: parseInt(sceneIndex),
+        state: state
+      }
     };
     
     if (state === 'dreaming') {
@@ -86,7 +91,21 @@ Deno.serve(async (req) => {
       
       console.log(`[Luma Callback] Uploaded to Base44: ${uploadedUrl}`);
       
-      // Create artifact
+      // Remove pending artifact to prevent duplicates
+      const pendingArtifacts = await base44.asServiceRole.entities.Artifact.filter({
+        job_id: jobId,
+        artifact_type: 'video_clip_pending',
+        scene_index: parseInt(sceneIndex)
+      });
+      
+      if (pendingArtifacts.length > 0) {
+        for (const pending of pendingArtifacts) {
+          await base44.asServiceRole.entities.Artifact.delete(pending.id);
+          console.log(`[Luma Callback] ✓ Removed pending artifact for scene ${sceneIndex}`);
+        }
+      }
+      
+      // Create completed artifact
       await base44.asServiceRole.entities.Artifact.create({
         job_id: jobId,
         project_id: projectId,
