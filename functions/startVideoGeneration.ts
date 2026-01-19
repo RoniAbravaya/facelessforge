@@ -288,6 +288,27 @@ async function generateVideo(base44, project, jobId, resumeFromStep = null) {
       console.log(`[Clip Generation] Total scenes: ${scenes.length}, Completed: ${generatedScenes.size}, Pending: ${pendingScenes.size}`);
       console.log(`[Clip Generation] Pending generations:`, pendingClips.map(p => ({ scene: p.scene_index, generationId: p.metadata?.generation_id })));
 
+      // Wait for pending clips before starting new ones
+      if (pendingClips.length > 0 && videoIntegration.provider_type === 'video_luma') {
+        const oldestPending = pendingClips.sort((a, b) => 
+          new Date(a.created_date).getTime() - new Date(b.created_date).getTime()
+        )[0];
+        const age = Math.floor((Date.now() - new Date(oldestPending.created_date).getTime()) / 60000);
+        
+        console.log(`[Clip Generation] ⏸️ Pausing - ${pendingClips.length} Luma jobs pending (oldest: ${age}m)`);
+        await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', 
+          `Waiting for ${pendingClips.length} pending Luma callbacks (oldest: ${age}m)`, 
+          65,
+          { 
+            pendingCount: pendingClips.length,
+            oldestAgeMinutes: age,
+            pendingScenes: Array.from(pendingScenes)
+          }
+        );
+        // Exit - callback or watchdog will resume
+        return;
+      }
+
       // Only log step_started if this is a fresh start
       if (generatedScenes.size === 0 && pendingScenes.size === 0) {
         await logEvent(base44, jobId, 'video_clip_generation', 'step_started', `Generating ${scenes.length} video clips`);

@@ -79,6 +79,16 @@ export default function ProjectDetails() {
     enabled: !!projectId
   });
 
+  const { data: pendingClips = [] } = useQuery({
+    queryKey: ['pendingClips', jobs[0]?.id],
+    queryFn: () => base44.entities.Artifact.filter({ 
+      job_id: jobs[0]?.id, 
+      artifact_type: 'video_clip_pending' 
+    }),
+    enabled: !!jobs[0]?.id,
+    refetchInterval: 2000
+  });
+
   const { data: events = [] } = useQuery({
     queryKey: ['events', jobs[0]?.id],
     queryFn: () => base44.entities.JobEvent.filter({ job_id: jobs[0]?.id }, 'created_date'),
@@ -302,6 +312,40 @@ export default function ProjectDetails() {
                   className="h-full bg-blue-600 transition-all duration-500"
                   style={{ width: `${latestJob?.progress || 0}%` }}
                 />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Pending Clips Display */}
+        {pendingClips.length > 0 && (
+          <Card className="border-blue-200 bg-blue-50 mb-8">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-3">
+                <Loader2 className="w-5 h-5 text-blue-600 mt-0.5 animate-spin" />
+                <div className="flex-1">
+                  <h3 className="font-semibold text-blue-900 mb-2">
+                    {pendingClips.length} Luma Generation{pendingClips.length > 1 ? 's' : ''} In Progress
+                  </h3>
+                  <div className="space-y-2">
+                    {pendingClips.map((clip) => (
+                      <div key={clip.id} className="text-sm bg-white p-3 rounded border border-blue-200">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium text-blue-900">Scene {clip.scene_index + 1}</p>
+                            <p className="text-blue-600 text-xs font-mono mt-1">
+                              ID: {clip.metadata?.generation_id}
+                            </p>
+                          </div>
+                          <Badge className="bg-blue-100 text-blue-800">
+                            <Clock className="w-3 h-3 mr-1" />
+                            {Math.floor((Date.now() - new Date(clip.metadata?.initiated_at || clip.created_date).getTime()) / 1000 / 60)}m
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
