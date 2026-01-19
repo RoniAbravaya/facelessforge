@@ -1,13 +1,13 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
 
-async function pollLumaGeneration(generationId, apiKey, jobId, base44, maxAttempts = 60) {
+async function pollLumaGeneration(generationId, apiKey, jobId, base44, maxAttempts = 120) {
   const pollStartTime = new Date().toISOString();
   console.log(`[${pollStartTime}] [Luma Polling] Starting polling for generation ${generationId}`);
   console.log(`[Luma Polling] Max attempts: ${maxAttempts}, 5 seconds per attempt = ${maxAttempts * 5}s max wait`);
   
   // Track elapsed time to prevent indefinite waits when provider doesn't respond
   const startTime = Date.now();
-  const maxDurationMs = 5 * 60 * 1000; // 5 minutes max for Luma
+  const maxDurationMs = 10 * 60 * 1000; // 10 minutes max for Luma
   
   for (let i = 0; i < maxAttempts; i++) {
     // Check if we've exceeded maximum polling duration
@@ -354,7 +354,7 @@ Deno.serve(async (req) => {
   
   try {
     const requestStartTime = new Date().toISOString();
-    const { apiKey, providerType, prompt, duration, aspectRatio, geminiApiKey } = await req.json();
+    const { apiKey, providerType, prompt, duration, aspectRatio, geminiApiKey, jobId } = await req.json();
     
     console.log(`[${requestStartTime}] === VIDEO CLIP GENERATION REQUEST ===`);
     console.log(`[${requestStartTime}] Provider: ${providerType}`);
@@ -547,7 +547,7 @@ Deno.serve(async (req) => {
       console.log(`Started Luma generation: ${generationId}`);
 
       // Poll for completion - pass jobId and base44 for logging
-      const videoUrl = await pollLumaGeneration(generationId, apiKey, null, null);
+      const videoUrl = await pollLumaGeneration(generationId, apiKey, jobId, base44);
 
       const completionTime = new Date().toISOString();
       const totalTime = Math.floor((Date.now() - new Date(requestStartTime).getTime()) / 1000);
@@ -632,7 +632,7 @@ Deno.serve(async (req) => {
       console.log(`Started Runway generation: ${taskId}`);
 
       // Poll for completion - pass jobId and base44 for logging
-      const videoUrl = await pollRunwayGeneration(taskId, apiKey, null, null);
+      const videoUrl = await pollRunwayGeneration(taskId, apiKey, jobId, base44);
 
       const completionTime = new Date().toISOString();
       const totalTime = Math.floor((Date.now() - new Date(requestStartTime).getTime()) / 1000);
@@ -740,7 +740,7 @@ Deno.serve(async (req) => {
       console.log(`Started Veo generation: ${operationName}`);
 
       // Poll for completion - returns Base44 URL after download/upload
-      const videoUrl = await pollVeoGeneration(operationName, apiKey, geminiApiKey, base44, null);
+      const videoUrl = await pollVeoGeneration(operationName, apiKey, geminiApiKey, base44, jobId);
 
       const completionTime = new Date().toISOString();
       const totalTime = Math.floor((Date.now() - new Date(requestStartTime).getTime()) / 1000);
