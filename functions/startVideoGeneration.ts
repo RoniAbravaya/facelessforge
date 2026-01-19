@@ -326,9 +326,26 @@ async function generateVideo(base44, project, jobId) {
             duration: clampedDuration,
             aspectRatio: project.aspect_ratio,
             geminiApiKey: geminiIntegration?.api_key,
-            jobId
+            jobId,
+            projectId,
+            sceneIndex: i
           });
 
+          // For Luma callback mode, we won't get videoUrl immediately
+          if (videoIntegration.provider_type === 'video_luma') {
+            if (clipResult.data.generationId) {
+              console.log(`[Clip ${i + 1}] Luma generation initiated: ${clipResult.data.generationId}`);
+              await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', 
+                `Clip ${i + 1} initiated (callback mode): ${clipResult.data.generationId}`, 
+                progressPercent
+              );
+              // Don't add to clipUrls yet - callback will handle that
+              continue;
+            } else {
+              throw new Error(`No generation ID returned for Luma clip ${i + 1}`);
+            }
+          }
+          
           if (!clipResult.data.videoUrl) {
             throw new Error(`No video URL returned for clip ${i + 1}`);
           }
