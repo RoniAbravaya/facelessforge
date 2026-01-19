@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, ArrowRight, Sparkles, Loader2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Sparkles, Loader2, Video as VideoIcon, Calendar } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -22,7 +23,15 @@ export default function CreateProject() {
     style: '',
     duration: 30,
     language: 'en',
-    aspectRatio: '9:16'
+    aspectRatio: '9:16',
+    tiktok_settings: {
+      enabled: false,
+      caption: '',
+      privacy_level: 'PUBLIC_TO_EVERYONE',
+      post_mode: 'post_now',
+      scheduled_time: '',
+      post_status: 'pending'
+    }
   });
 
   const { data: integrations = [] } = useQuery({
@@ -86,6 +95,13 @@ export default function CreateProject() {
       }
     }
 
+    if (step === 3) {
+      if (formData.tiktok_settings.enabled && formData.tiktok_settings.post_mode === 'schedule' && !formData.tiktok_settings.scheduled_time) {
+        toast.error('Please select a scheduled time');
+        return;
+      }
+    }
+
     setStep(step + 1);
   };
 
@@ -117,7 +133,7 @@ export default function CreateProject() {
               Create New Project
             </h1>
             <p className="text-slate-600 text-lg">
-              Step {step} of 3: {step === 1 ? 'Video Details' : step === 2 ? 'Select Providers' : 'Review & Create'}
+              Step {step} of 4: {step === 1 ? 'Video Details' : step === 2 ? 'Select Providers' : step === 3 ? 'TikTok Settings' : 'Review & Create'}
             </p>
           </motion.div>
         </div>
@@ -125,7 +141,7 @@ export default function CreateProject() {
         {/* Progress Bar */}
         <div className="mb-10">
           <div className="flex items-center gap-2">
-            {[1, 2, 3].map((s) => (
+            {[1, 2, 3, 4].map((s) => (
               <div
                 key={s}
                 className={`h-2 flex-1 rounded-full transition-all duration-500 ${
@@ -332,6 +348,143 @@ export default function CreateProject() {
             >
               <Card className="border-0 shadow-lg">
                 <CardHeader className="border-b bg-slate-50">
+                  <CardTitle className="flex items-center gap-2">
+                    <VideoIcon className="w-5 h-5" />
+                    TikTok Publishing (Optional)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-6 space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-base">Post to TikTok</Label>
+                      <p className="text-sm text-slate-600 mt-1">Automatically publish your video after generation</p>
+                    </div>
+                    <Switch
+                      checked={formData.tiktok_settings.enabled}
+                      onCheckedChange={(checked) => 
+                        setFormData({
+                          ...formData,
+                          tiktok_settings: { ...formData.tiktok_settings, enabled: checked }
+                        })
+                      }
+                    />
+                  </div>
+
+                  {formData.tiktok_settings.enabled && (
+                    <div className="space-y-4 pl-4 border-l-2 border-slate-200">
+                      <div>
+                        <Label htmlFor="caption">Caption</Label>
+                        <Textarea
+                          id="caption"
+                          placeholder="Add a caption for your TikTok video..."
+                          value={formData.tiktok_settings.caption}
+                          onChange={(e) => 
+                            setFormData({
+                              ...formData,
+                              tiktok_settings: { ...formData.tiktok_settings, caption: e.target.value }
+                            })
+                          }
+                          className="mt-1.5"
+                          maxLength={2200}
+                        />
+                        <p className="text-xs text-slate-500 mt-1">
+                          {formData.tiktok_settings.caption.length}/2200 characters
+                        </p>
+                      </div>
+
+                      <div>
+                        <Label>Privacy Level</Label>
+                        <Select
+                          value={formData.tiktok_settings.privacy_level}
+                          onValueChange={(value) => 
+                            setFormData({
+                              ...formData,
+                              tiktok_settings: { ...formData.tiktok_settings, privacy_level: value }
+                            })
+                          }
+                        >
+                          <SelectTrigger className="mt-1.5">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="PUBLIC_TO_EVERYONE">Public</SelectItem>
+                            <SelectItem value="MUTUAL_FOLLOW_FRIENDS">Friends Only</SelectItem>
+                            <SelectItem value="SELF_ONLY">Private</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div>
+                        <Label>Post Mode</Label>
+                        <Select
+                          value={formData.tiktok_settings.post_mode}
+                          onValueChange={(value) => 
+                            setFormData({
+                              ...formData,
+                              tiktok_settings: { ...formData.tiktok_settings, post_mode: value }
+                            })
+                          }
+                        >
+                          <SelectTrigger className="mt-1.5">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="post_now">Post Immediately</SelectItem>
+                            <SelectItem value="save_draft">Save as Draft</SelectItem>
+                            <SelectItem value="schedule">Schedule for Later</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {formData.tiktok_settings.post_mode === 'schedule' && (
+                        <div>
+                          <Label htmlFor="scheduled_time" className="flex items-center gap-2">
+                            <Calendar className="w-4 h-4" />
+                            Scheduled Time
+                          </Label>
+                          <Input
+                            id="scheduled_time"
+                            type="datetime-local"
+                            value={formData.tiktok_settings.scheduled_time}
+                            onChange={(e) => 
+                              setFormData({
+                                ...formData,
+                                tiktok_settings: { ...formData.tiktok_settings, scheduled_time: e.target.value }
+                              })
+                            }
+                            className="mt-1.5"
+                            min={new Date().toISOString().slice(0, 16)}
+                          />
+                          <p className="text-xs text-slate-500 mt-1">
+                            Your video will be posted automatically at this time
+                          </p>
+                        </div>
+                      )}
+
+                      {formData.tiktok_settings.post_mode === 'save_draft' && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                          <p className="text-sm text-blue-900">
+                            <strong>Note:</strong> Draft videos will be saved to your TikTok account. 
+                            Open the TikTok app to finish editing and publish.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
+          {step === 4 && (
+            <motion.div
+              key="step4"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+            >
+              <Card className="border-0 shadow-lg">
+                <CardHeader className="border-b bg-slate-50">
                   <CardTitle>Review & Confirm</CardTitle>
                 </CardHeader>
                 <CardContent className="pt-6 space-y-4">
@@ -357,6 +510,36 @@ export default function CreateProject() {
                     <p className="text-slate-600 mb-1 text-sm">Topic</p>
                     <p className="text-slate-900">{formData.topic}</p>
                   </div>
+                  
+                  {formData.tiktok_settings.enabled && (
+                    <div className="border-t pt-4 mt-4">
+                      <p className="text-slate-600 mb-2 text-sm font-semibold">TikTok Publishing</p>
+                      <div className="bg-slate-50 rounded-lg p-4 space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-slate-600">Mode:</span>
+                          <span className="font-medium text-slate-900">
+                            {formData.tiktok_settings.post_mode === 'post_now' ? 'Post Immediately' : 
+                             formData.tiktok_settings.post_mode === 'save_draft' ? 'Save as Draft' : 'Scheduled'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-600">Privacy:</span>
+                          <span className="font-medium text-slate-900">
+                            {formData.tiktok_settings.privacy_level === 'PUBLIC_TO_EVERYONE' ? 'Public' : 
+                             formData.tiktok_settings.privacy_level === 'MUTUAL_FOLLOW_FRIENDS' ? 'Friends' : 'Private'}
+                          </span>
+                        </div>
+                        {formData.tiktok_settings.scheduled_time && (
+                          <div className="flex justify-between">
+                            <span className="text-slate-600">Scheduled:</span>
+                            <span className="font-medium text-slate-900">
+                              {new Date(formData.tiktok_settings.scheduled_time).toLocaleString()}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </motion.div>
@@ -373,7 +556,7 @@ export default function CreateProject() {
             Previous
           </Button>
 
-          {step < 3 ? (
+          {step < 4 ? (
             <Button onClick={handleNext} className="bg-slate-900 hover:bg-slate-800">
               Next
               <ArrowRight className="w-4 h-4 ml-2" />

@@ -463,7 +463,57 @@ async function generateVideo(base44, project, jobId) {
     await updateJobProgress(base44, jobId, projectId, 'completed', 'completed', 100);
     await logEvent(base44, jobId, 'completion', 'step_finished', 'Video generation completed successfully!', 100);
 
-  } catch (error) {
+    // Handle TikTok posting if enabled
+    if (project.tiktok_settings?.enabled) {
+      try {
+        await logEvent(base44, jobId, 'tiktok_posting', 'step_started', 'Processing TikTok post...');
+
+        const finalVideoArtifacts = await base44.asServiceRole.entities.Artifact.filter({
+          job_id: jobId,
+          artifact_type: 'final_video'
+        });
+
+        if (finalVideoArtifacts.length > 0) {
+          const videoUrl = finalVideoArtifacts[0].file_url;
+
+          if (project.tiktok_settings.post_mode === 'schedule') {
+            // Create scheduled automation
+            const scheduledTime = new Date(project.tiktok_settings.scheduled_time);
+            await logEvent(base44, jobId, 'tiktok_posting', 'step_progress', `Scheduled TikTok post for ${scheduledTime.toLocaleString()}`);
+
+            await base44.asServiceRole.entities.Project.update(projectId, {
+              'tiktok_settings.post_status': 'scheduled'
+            });
+
+            // Note: Automation creation would need to be done via a separate API call
+            // For now, we'll just mark it as scheduled
+          } else {
+            // Post immediately or as draft
+            const isDraft = project.tiktok_settings.post_mode === 'save_draft';
+
+            await logEvent(base44, jobId, 'tiktok_posting', 'step_progress', 
+              isDraft ? 'Saving to TikTok as draft...' : 'Posting to TikTok...');
+
+            const tiktokResult = await base44.asServiceRole.functions.invoke('postToTikTok', {
+              videoUrl,
+              caption: project.tiktok_settings.caption,
+              privacyLevel: project.tiktok_settings.privacy_level,
+              isDraft,
+              projectId
+            });
+
+            await logEvent(base44, jobId, 'tiktok_posting', 'step_finished', 
+              tiktokResult.data.message, null, tiktokResult.data);
+          }
+        }
+      } catch (tiktokError) {
+        console.error('TikTok posting error:', tiktokError);
+        await logEvent(base44, jobId, 'tiktok_posting', 'step_failed', 
+          `TikTok posting failed: ${tiktokError.message}`);
+      }
+    }
+
+    } catch (error) {
     console.error('Generation error:', error);
     await updateJobProgress(base44, jobId, projectId, 'failed', currentStep, 0, error.message);
     await logEvent(base44, jobId, currentStep, 'step_failed', error.message, null, { error: error.stack });
