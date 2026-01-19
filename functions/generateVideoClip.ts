@@ -359,7 +359,8 @@ Deno.serve(async (req) => {
   
   try {
     const requestStartTime = new Date().toISOString();
-    const { apiKey, providerType, prompt, duration, aspectRatio, geminiApiKey, jobId } = await req.json();
+    const requestData = await req.json();
+    const { apiKey, providerType, prompt, duration, aspectRatio, geminiApiKey, jobId, projectId, sceneIndex } = requestData;
     
     console.log(`[${requestStartTime}] === VIDEO CLIP GENERATION REQUEST ===`);
     console.log(`[${requestStartTime}] Provider: ${providerType}`);
@@ -385,7 +386,7 @@ Deno.serve(async (req) => {
     }
 
     if (providerType === 'video_luma') {
-      console.log('=== LUMA VIDEO GENERATION START ===');
+      console.log('=== LUMA VIDEO GENERATION START (CALLBACK MODE) ===');
       console.log(`Full API key: ${apiKey}`);
       console.log(`API key type: ${typeof apiKey}`);
       console.log(`API key length: ${apiKey?.length}`);
@@ -401,6 +402,15 @@ Deno.serve(async (req) => {
       }
       console.log(`[Luma Duration Mapping] Requested: ${durationNum}s -> Using: ${lumaDuration}s (Luma supports only 5s, 9s, 10s)`);
 
+      // Extract additional context from request
+      const { projectId, sceneIndex } = await req.json().then(data => ({ projectId: data.projectId, sceneIndex: data.sceneIndex }));
+      
+      // Construct callback URL
+      const appId = Deno.env.get('BASE44_APP_ID');
+      const callbackUrl = `https://app-${appId}.base44.app/api/functions/lumaCallback?jobId=${jobId}&sceneIndex=${sceneIndex || 0}&projectId=${projectId}`;
+      
+      console.log(`[Luma] Callback URL: ${callbackUrl}`);
+
       // Start Luma generation
       const lumaHeaders = {
         'Authorization': `Bearer ${apiKey}`,
@@ -408,12 +418,13 @@ Deno.serve(async (req) => {
         'accept': 'application/json'
       };
 
-      console.log('Building Luma request body...');
+      console.log('Building Luma request body with callback...');
       const lumaBody = {
         model: 'ray-2',
         prompt: prompt,
         duration: `${lumaDuration}s`,
-        resolution: '720p'
+        resolution: '720p',
+        callback_url: callbackUrl
       };
 
       console.log(`Luma body keys:`, Object.keys(lumaBody));
@@ -421,7 +432,8 @@ Deno.serve(async (req) => {
         model: typeof lumaBody.model,
         prompt: typeof lumaBody.prompt,
         duration: typeof lumaBody.duration,
-        resolution: typeof lumaBody.resolution
+        resolution: typeof lumaBody.resolution,
+        callback_url: typeof lumaBody.callback_url
       });
 
       // Add optional parameters if specified
@@ -443,12 +455,11 @@ Deno.serve(async (req) => {
       console.log(`API Key first 50 chars: ${apiKey.substring(0, 50)}`);
       console.log(`API Key last 50 chars: ${apiKey.substring(Math.max(0, apiKey.length - 50))}`);
 
-      // Retry logic for transient errors with abort controller for polling cancellation
+      // Retry logic for transient errors
       const maxRetries = 3;
       const retryDelays = [2000, 5000, 10000]; // milliseconds
       let response;
       let lastError;
-      const pollingAbortController = new AbortController();
 
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         // Set timeout to prevent indefinite hangs when provider doesn't respond
@@ -479,8 +490,7 @@ Deno.serve(async (req) => {
               await new Promise(res => setTimeout(res, delay));
               continue;
             } else {
-              // After all retries exhausted, abort any polling and throw specific error
-              pollingAbortController.abort();
+              // After all retries exhausted, throw specific error
               console.error(`[${new Date().toISOString()}] ⚠️ Luma transient errors exhausted after ${maxRetries + 1} attempts`);
               throw new Error(`LUMA_TRANSIENT_ERROR: Luma API unavailable (${response.status}) after ${maxRetries + 1} attempts. ${errorText}`);
             }
@@ -491,7 +501,6 @@ Deno.serve(async (req) => {
         } catch (fetchError) {
           clearTimeout(timeout);
           if (fetchError.name === 'AbortError') {
-            pollingAbortController.abort();
             throw new Error('Luma generation request timed out after 6 minutes');
           }
           lastError = fetchError;
@@ -504,7 +513,6 @@ Deno.serve(async (req) => {
             continue;
           }
 
-          pollingAbortController.abort();
           throw fetchError;
         }
       }
@@ -547,7 +555,7 @@ Deno.serve(async (req) => {
       }
 
       const data = await response.json();
-      console.log('=== LUMA API SUCCESS ===');
+      console.log('=== LUMA API SUCCESS (CALLBACK MODE) ===');
       console.log(`Response data:`, JSON.stringify(data, null, 2));
 
       const generationId = data.id;
@@ -555,21 +563,16 @@ Deno.serve(async (req) => {
         throw new Error(`Luma response missing generation ID. Response: ${JSON.stringify(data)}`);
       }
 
-      console.log(`Started Luma generation: ${generationId}`);
-
-      // Poll for completion - pass jobId, base44, and abort signal for cancellation support
-      const videoUrl = await pollLumaGeneration(generationId, apiKey, jobId, base44, pollingAbortController.signal);
-
-      // Check if polling was cancelled
-      if (!videoUrl) {
-        console.log(`[${new Date().toISOString()}] ⚠️ Luma polling was cancelled`);
-        throw new Error('Luma polling was cancelled due to request failure');
-      }
-
-      const completionTime = new Date().toISOString();
-      const totalTime = Math.floor((Date.now() - new Date(requestStartTime).getTime()) / 1000);
-      console.log(`[${completionTime}] ✅ Luma generation completed in ${totalTime}s: ${videoUrl}`);
-      return Response.json({ videoUrl });
+      console.log(`[${new Date().toISOString()}] ✅ Luma generation initiated: ${generationId}`);
+      console.log(`[${new Date().toISOString()}] Luma will POST updates to: ${callbackUrl}`);
+      
+      // Return immediately - the callback will handle completion
+      return Response.json({ 
+        generationId,
+        status: 'pending',
+        message: 'Luma generation initiated successfully. Callback will process completion.',
+        callbackUrl
+      });
 
     } else if (providerType === 'video_runway') {
       // Retry logic for transient errors
