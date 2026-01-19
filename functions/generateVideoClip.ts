@@ -402,10 +402,7 @@ Deno.serve(async (req) => {
       }
       console.log(`[Luma Duration Mapping] Requested: ${durationNum}s -> Using: ${lumaDuration}s (Luma supports only 5s, 9s, 10s)`);
 
-      // Extract additional context from request
-      const { projectId, sceneIndex } = await req.json().then(data => ({ projectId: data.projectId, sceneIndex: data.sceneIndex }));
-      
-      // Construct callback URL
+      // Construct callback URL (projectId and sceneIndex already parsed from requestData)
       const appId = Deno.env.get('BASE44_APP_ID');
       const callbackUrl = `https://app-${appId}.base44.app/api/functions/lumaCallback?jobId=${jobId}&sceneIndex=${sceneIndex || 0}&projectId=${projectId}`;
       
@@ -479,10 +476,10 @@ Deno.serve(async (req) => {
 
           console.log(`[${new Date().toISOString()}] Fetch completed, status: ${response.status}`);
 
-          // Check for transient errors (502, 503, 504)
-          if ([502, 503, 504].includes(response.status)) {
+          // Check for transient errors (500, 502, 503, 504)
+          if ([500, 502, 503, 504].includes(response.status)) {
             const errorText = await response.text();
-            console.warn(`[${new Date().toISOString()}] ⚠️ Luma transient error ${response.status} on attempt ${attempt + 1}/${maxRetries + 1}`);
+            console.warn(`[${new Date().toISOString()}] ⚠️ Luma transient error ${response.status} on attempt ${attempt + 1}/${maxRetries + 1}: ${errorText}`);
 
             if (attempt < maxRetries) {
               const delay = retryDelays[attempt];
@@ -527,34 +524,24 @@ Deno.serve(async (req) => {
         'server': response.headers.get('server')
       });
 
+      let data;
       if (!response.ok) {
         const errorText = await response.text();
         console.error('=== LUMA API ERROR ===');
         console.error(`Status Code: ${response.status}`);
         console.error(`Status Text: ${response.statusText}`);
         console.error(`Raw error text: "${errorText}"`);
-        console.error(`Error text length: ${errorText.length} chars`);
-        const byteLength = new TextEncoder().encode(errorText).length;
-        console.error(`Error text as bytes: ${byteLength} bytes`);
-        console.error(`Error text charCodes:`, errorText.split('').map(c => c.charCodeAt(0)));
 
         try {
           const error = JSON.parse(errorText);
-          console.error(`Successfully parsed as JSON:`, JSON.stringify(error, null, 2));
-          console.error(`Error keys:`, Object.keys(error));
-          console.error(`Error detail:`, error.detail);
-          console.error(`Error message:`, error.message);
           throw new Error(`Luma API error: ${error.error?.message || error.message || error.detail || errorText}`);
         } catch (parseError) {
-          console.error(`Failed to parse error as JSON:`, parseError.message);
-          console.error(`Attempted JSON parse of: "${errorText}"`);
           throw new Error(`Luma API error (${response.status}): ${errorText}`);
         }
       } else {
         console.log('=== LUMA API SUCCESS ===');
+        data = await response.json();
       }
-
-      const data = await response.json();
       console.log('=== LUMA API SUCCESS (CALLBACK MODE) ===');
       console.log(`Response data:`, JSON.stringify(data, null, 2));
 
