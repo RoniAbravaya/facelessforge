@@ -1,13 +1,13 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
 
-async function pollLumaGeneration(generationId, apiKey, jobId, base44, maxAttempts = 120) {
+async function pollLumaGeneration(generationId, apiKey, jobId, base44, maxAttempts = 60) {
   const pollStartTime = new Date().toISOString();
   console.log(`[${pollStartTime}] [Luma Polling] Starting polling for generation ${generationId}`);
   console.log(`[Luma Polling] Max attempts: ${maxAttempts}, 5 seconds per attempt = ${maxAttempts * 5}s max wait`);
   
   // Track elapsed time to prevent indefinite waits when provider doesn't respond
   const startTime = Date.now();
-  const maxDurationMs = 10 * 60 * 1000; // 10 minutes max for Luma
+  const maxDurationMs = 5 * 60 * 1000; // 5 minutes max for Luma
   
   for (let i = 0; i < maxAttempts; i++) {
     // Check if we've exceeded maximum polling duration
@@ -18,20 +18,6 @@ async function pollLumaGeneration(generationId, apiKey, jobId, base44, maxAttemp
       const elapsedMin = Math.floor(elapsed / 60000);
       const timestamp = new Date().toISOString();
       console.error(`[${timestamp}] [Luma Polling] Timeout after ${elapsedMin} minutes`);
-
-      if (jobId && base44) {
-        await base44.asServiceRole.entities.JobEvent.create({
-          job_id: jobId,
-          level: 'error',
-          step: 'video_clip_generation',
-          event_type: 'step_failed',
-          message: `Luma generation timed out after ${elapsedMin} minutes`,
-          progress: null,
-          data: { provider: 'luma', generationId, timeout: true },
-          timestamp: new Date().toISOString()
-        });
-      }
-
       throw new Error(`Luma polling timed out after ${elapsedMin} minutes`);
     }
     
@@ -109,10 +95,10 @@ async function pollLumaGeneration(generationId, apiKey, jobId, base44, maxAttemp
   throw new Error(`Luma generation timeout after ${maxAttempts * 5}s`);
 }
 
-async function pollRunwayGeneration(taskId, apiKey, jobId, base44, maxAttempts = 120) {
+async function pollRunwayGeneration(taskId, apiKey, jobId, base44, maxAttempts = 60) {
   // Track elapsed time to prevent indefinite waits when provider doesn't respond
   const startTime = Date.now();
-  const maxDurationMs = 10 * 60 * 1000; // 10 minutes max for Runway
+  const maxDurationMs = 5 * 60 * 1000; // 5 minutes max for Runway
   
   const pollStartTime = new Date().toISOString();
   console.log(`[${pollStartTime}] [Runway Polling] Starting polling for task ${taskId}`);
@@ -197,10 +183,10 @@ async function pollRunwayGeneration(taskId, apiKey, jobId, base44, maxAttempts =
   throw new Error('Runway generation timeout after 5 minutes');
 }
 
-async function pollVeoGeneration(operationName, veoApiKey, geminiApiKey, base44, jobId, maxAttempts = 144) {
+async function pollVeoGeneration(operationName, veoApiKey, geminiApiKey, base44, jobId, maxAttempts = 72) {
   // Track elapsed time to prevent indefinite waits when provider doesn't respond
   const startTime = Date.now();
-  const maxDurationMs = 12 * 60 * 1000; // 12 minutes max for Veo
+  const maxDurationMs = 6 * 60 * 1000; // 6 minutes max for Veo
   
   const pollStartTime = new Date().toISOString();
   console.log(`[${pollStartTime}] [Veo Polling] Starting polling for operation ${operationName}`);
@@ -368,7 +354,7 @@ Deno.serve(async (req) => {
   
   try {
     const requestStartTime = new Date().toISOString();
-    const { apiKey, providerType, prompt, duration, aspectRatio, geminiApiKey, jobId } = await req.json();
+    const { apiKey, providerType, prompt, duration, aspectRatio, geminiApiKey } = await req.json();
     
     console.log(`[${requestStartTime}] === VIDEO CLIP GENERATION REQUEST ===`);
     console.log(`[${requestStartTime}] Provider: ${providerType}`);
@@ -561,7 +547,7 @@ Deno.serve(async (req) => {
       console.log(`Started Luma generation: ${generationId}`);
 
       // Poll for completion - pass jobId and base44 for logging
-      const videoUrl = await pollLumaGeneration(generationId, apiKey, jobId, base44);
+      const videoUrl = await pollLumaGeneration(generationId, apiKey, null, null);
 
       const completionTime = new Date().toISOString();
       const totalTime = Math.floor((Date.now() - new Date(requestStartTime).getTime()) / 1000);
@@ -646,7 +632,7 @@ Deno.serve(async (req) => {
       console.log(`Started Runway generation: ${taskId}`);
 
       // Poll for completion - pass jobId and base44 for logging
-      const videoUrl = await pollRunwayGeneration(taskId, apiKey, jobId, base44);
+      const videoUrl = await pollRunwayGeneration(taskId, apiKey, null, null);
 
       const completionTime = new Date().toISOString();
       const totalTime = Math.floor((Date.now() - new Date(requestStartTime).getTime()) / 1000);
@@ -754,7 +740,7 @@ Deno.serve(async (req) => {
       console.log(`Started Veo generation: ${operationName}`);
 
       // Poll for completion - returns Base44 URL after download/upload
-      const videoUrl = await pollVeoGeneration(operationName, apiKey, geminiApiKey, base44, jobId);
+      const videoUrl = await pollVeoGeneration(operationName, apiKey, geminiApiKey, base44, null);
 
       const completionTime = new Date().toISOString();
       const totalTime = Math.floor((Date.now() - new Date(requestStartTime).getTime()) / 1000);

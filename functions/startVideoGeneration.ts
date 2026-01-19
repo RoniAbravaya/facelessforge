@@ -325,8 +325,7 @@ async function generateVideo(base44, project, jobId) {
             prompt: scene.prompt,
             duration: clampedDuration,
             aspectRatio: project.aspect_ratio,
-            geminiApiKey: geminiIntegration?.api_key,
-            jobId
+            geminiApiKey: geminiIntegration?.api_key
           });
 
           if (!clipResult.data.videoUrl) {
