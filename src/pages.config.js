@@ -2,6 +2,7 @@ import CreateProject from './pages/CreateProject';
 import Dashboard from './pages/Dashboard';
 import Integrations from './pages/Integrations';
 import ProjectDetails from './pages/ProjectDetails';
+import TikTokAnalytics from './pages/TikTokAnalytics';
 import __Layout from './Layout.jsx';
 
 
@@ -10,6 +11,7 @@ export const PAGES = {
     "Dashboard": Dashboard,
     "Integrations": Integrations,
     "ProjectDetails": ProjectDetails,
+    "TikTokAnalytics": TikTokAnalytics,
 }
 
 export const pagesConfig = {
