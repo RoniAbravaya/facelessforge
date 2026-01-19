@@ -18,6 +18,7 @@ export default function Layout({ children, currentPageName }) {
 
   const navItems = [
     { name: 'Dashboard', icon: Home, page: 'Dashboard' },
+    { name: 'TikTok Analytics', icon: Video, page: 'TikTokAnalytics' },
     { name: 'Integrations', icon: Settings, page: 'Integrations' }
   ];
 
