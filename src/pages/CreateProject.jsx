@@ -7,8 +7,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, ArrowRight, Sparkles, Loader2, Video as VideoIcon, Calendar } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Sparkles, Loader2, Video as VideoIcon, Calendar, Wand2 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
+import SuggestionField from '../components/project/SuggestionField';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -34,6 +35,10 @@ export default function CreateProject() {
     }
   });
 
+  const [suggestions, setSuggestions] = useState(null);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [previousSuggestions, setPreviousSuggestions] = useState([]);
+
   const { data: integrations = [] } = useQuery({
     queryKey: ['integrations'],
     queryFn: () => base44.entities.Integration.list()
@@ -51,6 +56,27 @@ export default function CreateProject() {
     video: videoProviders[0]?.id || '',
     assembly: assemblyProviders[0]?.id || ''
   });
+
+  const fetchSuggestions = async () => {
+    setLoadingSuggestions(true);
+    try {
+      const result = await base44.functions.invoke('generateProjectSuggestions', {
+        excludeSuggestions: previousSuggestions
+      });
+      setSuggestions(result.data.suggestion);
+      setPreviousSuggestions([...previousSuggestions, result.data.suggestion]);
+      
+      if (result.data.hasAnalytics) {
+        toast.success(`AI analyzed ${result.data.topPerformers} top videos (avg ${result.data.avgEngagement}% engagement)`);
+      } else {
+        toast.success('AI generated suggestions based on trending topics');
+      }
+    } catch (error) {
+      toast.error('Failed to generate suggestions: ' + error.message);
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  };
 
   const createProject = useMutation({
     mutationFn: async (data) => {
@@ -168,6 +194,38 @@ export default function CreateProject() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-6 space-y-6">
+                  {/* AI Suggestions Button */}
+                  <div className="bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Wand2 className="w-5 h-5 text-purple-600" />
+                        <div>
+                          <h3 className="font-semibold text-purple-900">AI Suggestion Assistant</h3>
+                          <p className="text-xs text-purple-700 mt-0.5">
+                            Get data-driven ideas based on your analytics & trends
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        onClick={fetchSuggestions}
+                        disabled={loadingSuggestions}
+                        className="bg-purple-600 hover:bg-purple-700"
+                      >
+                        {loadingSuggestions ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Analyzing...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4 mr-2" />
+                            Get Suggestions
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
                   <div>
                     <Label htmlFor="title">Project Title *</Label>
                     <Input
@@ -176,6 +234,12 @@ export default function CreateProject() {
                       value={formData.title}
                       onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                       className="mt-1.5"
+                    />
+                    <SuggestionField
+                      suggestion={suggestions?.title}
+                      isLoading={loadingSuggestions}
+                      onUse={() => setFormData({ ...formData, title: suggestions.title })}
+                      onRegenerate={fetchSuggestions}
                     />
                   </div>
 
@@ -188,6 +252,13 @@ export default function CreateProject() {
                       onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
                       className="mt-1.5 min-h-[100px]"
                     />
+                    <SuggestionField
+                      suggestion={suggestions?.topic}
+                      isLoading={loadingSuggestions}
+                      onUse={() => setFormData({ ...formData, topic: suggestions.topic })}
+                      onRegenerate={fetchSuggestions}
+                      reasoning={suggestions?.reasoning}
+                    />
                   </div>
 
                   <div>
@@ -198,6 +269,12 @@ export default function CreateProject() {
                       value={formData.style}
                       onChange={(e) => setFormData({ ...formData, style: e.target.value })}
                       className="mt-1.5"
+                    />
+                    <SuggestionField
+                      suggestion={suggestions?.style}
+                      isLoading={loadingSuggestions}
+                      onUse={() => setFormData({ ...formData, style: suggestions.style })}
+                      onRegenerate={fetchSuggestions}
                     />
                   </div>
 
