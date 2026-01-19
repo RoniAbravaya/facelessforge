@@ -16,8 +16,8 @@ Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
   
   try {
-    // Maximum age for a pending job (30 minutes)
-    const MAX_AGE_MS = 30 * 60 * 1000;
+    // Maximum age for a pending job (20 minutes - configurable)
+    const MAX_AGE_MS = 20 * 60 * 1000;
     const now = Date.now();
     
     // Get all pending Luma generations
@@ -130,12 +130,13 @@ Deno.serve(async (req) => {
             level: 'warning',
             step: 'video_clip_generation',
             event_type: 'step_finished',
-            message: `Scene ${sceneIndex} recovered by watchdog (missed callback)`,
+            message: `Scene ${sceneIndex} recovered by watchdog (generation ${generationId})`,
             data: {
               provider: 'luma',
               generation_id: generationId,
               scene_index: sceneIndex,
-              recovered: true
+              recovered: true,
+              age_minutes: ageMinutes
             }
           });
           
@@ -181,13 +182,14 @@ Deno.serve(async (req) => {
             level: 'error',
             step: 'video_clip_generation',
             event_type: 'step_failed',
-            message: `Scene ${sceneIndex} timed out after ${ageMinutes} minutes`,
+            message: `Scene ${sceneIndex} timed out after ${ageMinutes}m (state: ${state})`,
             data: {
               provider: 'luma',
               generation_id: generationId,
               scene_index: sceneIndex,
               state: state,
-              age_minutes: ageMinutes
+              age_minutes: ageMinutes,
+              timeout_threshold: 20
             }
           });
           

@@ -286,7 +286,14 @@ async function generateVideo(base44, project, jobId, resumeFromStep = null) {
       await updateJobProgress(base44, jobId, projectId, 'running', currentStep, 65);
 
       console.log(`[Clip Generation] Total scenes: ${scenes.length}, Completed: ${generatedScenes.size}, Pending: ${pendingScenes.size}`);
-      console.log(`[Clip Generation] Pending generations:`, pendingClips.map(p => ({ scene: p.scene_index, generationId: p.metadata?.generation_id })));
+      console.log(`[Clip Generation] Pending generations:`, pendingClips.map(p => {
+        const age = Math.floor((Date.now() - new Date(p.created_date).getTime()) / 60000);
+        return { 
+          scene: p.scene_index, 
+          generationId: p.metadata?.generation_id,
+          ageMinutes: age
+        };
+      }));
 
       // Wait for pending clips before starting new ones
       if (pendingClips.length > 0 && videoIntegration.provider_type === 'video_luma') {
@@ -331,9 +338,11 @@ async function generateVideo(base44, project, jobId, resumeFromStep = null) {
         if (pendingScenes.has(i)) {
           const pending = pendingClips.find(c => c.scene_index === i);
           const genId = pending?.metadata?.generation_id || 'unknown';
-          console.log(`[Clip ${i + 1}/${scenes.length}] ⏳ Skipping - already in progress (${genId})`);
+          const age = Math.floor((Date.now() - new Date(pending.created_date).getTime()) / 60000);
+          console.log(`[Clip ${i + 1}/${scenes.length}] ⏳ Skipping - already in progress (${genId}, ${age}m old)`);
           await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', 
-            `Scene ${i + 1} in progress (generation ${genId})`, progressPercent);
+            `Scene ${i + 1} in progress (${genId}, ${age}m old)`, progressPercent,
+            { scene_index: i, generation_id: genId, age_minutes: age });
           continue;
         }
         
@@ -378,7 +387,7 @@ async function generateVideo(base44, project, jobId, resumeFromStep = null) {
           `Starting clip ${i + 1}/${scenes.length} (${clampedDuration}s, ${videoIntegration.provider_type})`, 
           progressPercent,
           {
-            clipIndex: i,
+            scene_index: i,
             totalClips: scenes.length,
             duration: clampedDuration,
             provider: videoIntegration.provider_type,
@@ -402,10 +411,12 @@ async function generateVideo(base44, project, jobId, resumeFromStep = null) {
           // For Luma callback mode, we won't get videoUrl immediately
           if (videoIntegration.provider_type === 'video_luma') {
             if (clipResult.data.generationId) {
-              console.log(`[Clip ${i + 1}] Luma generation initiated: ${clipResult.data.generationId}`);
+              const genId = clipResult.data.generationId;
+              console.log(`[Clip ${i + 1}] Luma generation initiated: ${genId}`);
               await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', 
-                `Clip ${i + 1} initiated (callback mode): ${clipResult.data.generationId}`, 
-                progressPercent
+                `Scene ${i + 1} initiated (${genId})`, 
+                progressPercent,
+                { scene_index: i, generation_id: genId, provider: 'luma' }
               );
               // Don't add to clipUrls yet - callback will handle that
               continue;
@@ -438,12 +449,13 @@ async function generateVideo(base44, project, jobId, resumeFromStep = null) {
           });
 
           await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', 
-            `Completed clip ${i + 1}/${scenes.length} in ${clipDuration}s`, 
+            `Scene ${i + 1} completed in ${clipDuration}s`, 
             progressPercent,
             {
-              clipIndex: i,
+              scene_index: i,
               generationTimeSeconds: clipDuration,
-              videoUrl: clipResult.data.videoUrl
+              videoUrl: clipResult.data.videoUrl,
+              provider: videoIntegration.provider_type
             }
           );
         } catch (clipError) {
@@ -455,12 +467,13 @@ async function generateVideo(base44, project, jobId, resumeFromStep = null) {
           console.error(`[${clipEndTimestamp}] [Clip ${i + 1}] Stack:`, clipError.stack);
 
           await logEvent(base44, jobId, 'video_clip_generation', 'step_failed', 
-            `Clip ${i + 1}/${scenes.length} failed: ${clipError.message}`, 
+            `Scene ${i + 1} failed: ${clipError.message}`, 
             progressPercent,
             {
-              clipIndex: i,
+              scene_index: i,
               error: clipError.message,
-              generationTimeSeconds: clipDuration
+              generationTimeSeconds: clipDuration,
+              provider: videoIntegration.provider_type
             }
           );
 

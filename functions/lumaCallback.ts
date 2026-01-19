@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
       await base44.asServiceRole.entities.JobEvent.create({
         ...eventBase,
         event_type: 'step_progress',
-        message: `Luma generation ${generationId} (scene ${sceneIndex}) is processing...`,
+        message: `Scene ${sceneIndex} processing (${generationId})`,
         progress: 50
       });
       
@@ -91,7 +91,7 @@ Deno.serve(async (req) => {
       
       console.log(`[Luma Callback] Uploaded to Base44: ${uploadedUrl}`);
       
-      // Remove pending artifact to prevent duplicates
+      // Remove ALL pending artifacts for this scene (cleanup obsolete generations)
       const pendingArtifacts = await base44.asServiceRole.entities.Artifact.filter({
         job_id: jobId,
         artifact_type: 'video_clip_pending',
@@ -99,9 +99,10 @@ Deno.serve(async (req) => {
       });
       
       if (pendingArtifacts.length > 0) {
+        console.log(`[Luma Callback] Cleaning up ${pendingArtifacts.length} pending artifact(s) for scene ${sceneIndex}`);
         for (const pending of pendingArtifacts) {
           await base44.asServiceRole.entities.Artifact.delete(pending.id);
-          console.log(`[Luma Callback] ✓ Removed pending artifact for scene ${sceneIndex}`);
+          console.log(`[Luma Callback] ✓ Deleted pending artifact: ${pending.metadata?.generation_id || pending.id}`);
         }
       }
       
@@ -124,9 +125,9 @@ Deno.serve(async (req) => {
         ...eventBase,
         level: 'success',
         event_type: 'step_progress',
-        message: `Scene ${sceneIndex} video generated and uploaded`,
+        message: `Scene ${sceneIndex} completed (${generationId})`,
         progress: 100,
-        data: { ...eventBase.data, uploadedUrl }
+        data: { ...eventBase.data, uploaded_url: uploadedUrl }
       });
       
       console.log(`[Luma Callback] ✅ Scene ${sceneIndex} artifact created`);
@@ -200,7 +201,7 @@ Deno.serve(async (req) => {
         ...eventBase,
         level: 'error',
         event_type: 'step_failed',
-        message: `Scene ${sceneIndex} generation failed: ${failure_reason || 'Unknown error'}`,
+        message: `Scene ${sceneIndex} failed: ${failure_reason || 'Unknown error'} (${generationId})`,
         data: { ...eventBase.data, failure_reason }
       });
       
