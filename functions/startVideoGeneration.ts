@@ -295,6 +295,45 @@ async function generateVideo(base44, project, jobId, resumeFromStep = null) {
         };
       }));
 
+      // Validate Luma generations before proceeding
+      if (videoIntegration.provider_type === 'video_luma' && (pendingClips.length > 0 || startStepIndex === 4)) {
+        console.log(`[Clip Generation] Running Luma validation...`);
+        try {
+          const validationResult = await base44.asServiceRole.functions.invoke('validateLumaGenerations', {
+            jobId,
+            projectId
+          });
+          
+          if (validationResult.data?.summary) {
+            const summary = validationResult.data.summary;
+            console.log(`[Clip Generation] Validation complete: ${summary.completed} completed, ${summary.failed} failed, ${summary.timeout} timeout`);
+            
+            if (summary.recovered && summary.recovered.length > 0) {
+              await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', 
+                `Validated ${summary.total} Luma jobs: recovered ${summary.recovered.length} scenes`, 
+                65,
+                { validation: summary }
+              );
+              
+              // Refresh artifacts after validation
+              const refreshedClips = await base44.asServiceRole.entities.Artifact.filter({ job_id: jobId, artifact_type: 'video_clip' });
+              const refreshedPending = await base44.asServiceRole.entities.Artifact.filter({ job_id: jobId, artifact_type: 'video_clip_pending' });
+              existingClips.length = 0;
+              existingClips.push(...refreshedClips);
+              pendingClips.length = 0;
+              pendingClips.push(...refreshedPending);
+              generatedScenes.clear();
+              pendingScenes.clear();
+              refreshedClips.forEach(c => generatedScenes.add(c.scene_index));
+              refreshedPending.forEach(c => pendingScenes.add(c.scene_index));
+            }
+          }
+        } catch (validationError) {
+          console.error(`[Clip Generation] Validation failed:`, validationError.message);
+          // Continue anyway - don't block on validation errors
+        }
+      }
+      
       // Wait for pending clips before starting new ones
       if (pendingClips.length > 0 && videoIntegration.provider_type === 'video_luma') {
         const oldestPending = pendingClips.sort((a, b) => 
@@ -312,7 +351,7 @@ async function generateVideo(base44, project, jobId, resumeFromStep = null) {
             pendingScenes: Array.from(pendingScenes)
           }
         );
-        // Exit - callback or watchdog will resume
+        // Exit - callback or validation will resume
         return;
       }
 

@@ -66,6 +66,26 @@ export default function ProjectDetails() {
     }
   });
 
+  const validateLumaMutation = useMutation({
+    mutationFn: async () => {
+      return await base44.functions.invoke('validateLumaGenerations', {
+        jobId: latestJob.id,
+        projectId
+      });
+    },
+    onSuccess: (result) => {
+      const summary = result.data?.summary;
+      if (summary) {
+        toast.success(`Validated ${summary.total} generations: ${summary.completed} completed, ${summary.failed} failed`);
+        queryClient.invalidateQueries({ queryKey: ['artifacts', projectId] });
+        queryClient.invalidateQueries({ queryKey: ['pendingClips', latestJob.id] });
+      }
+    },
+    onError: (error) => {
+      toast.error(`Validation failed: ${error.message}`);
+    }
+  });
+
   const { data: jobs = [] } = useQuery({
     queryKey: ['jobs', projectId],
     queryFn: () => base44.entities.Job.filter({ project_id: projectId }, '-created_date'),
@@ -324,9 +344,30 @@ export default function ProjectDetails() {
               <div className="flex items-start gap-3">
                 <Loader2 className="w-5 h-5 text-blue-600 mt-0.5 animate-spin" />
                 <div className="flex-1">
-                  <h3 className="font-semibold text-blue-900 mb-2">
-                    {pendingClips.length} Luma Generation{pendingClips.length > 1 ? 's' : ''} In Progress
-                  </h3>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold text-blue-900">
+                      {pendingClips.length} Luma Generation{pendingClips.length > 1 ? 's' : ''} In Progress
+                    </h3>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => validateLumaMutation.mutate()}
+                      disabled={validateLumaMutation.isPending}
+                      className="text-blue-600 border-blue-300"
+                    >
+                      {validateLumaMutation.isPending ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Validating...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Validate
+                        </>
+                      )}
+                    </Button>
+                  </div>
                   <div className="space-y-2">
                     {pendingClips.map((clip) => (
                       <div key={clip.id} className="text-sm bg-white p-3 rounded border border-blue-200">
