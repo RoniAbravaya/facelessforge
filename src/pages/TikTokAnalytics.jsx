@@ -54,11 +54,26 @@ export default function TikTokAnalytics() {
 
   const { userInfo = {}, videos = [] } = data || {};
 
-  // Calculate totals from videos
+  // Calculate engagement rate for each video
+  const videosWithEngagement = videos.map(v => ({
+    ...v,
+    engagementRate: v.view_count > 0 
+      ? ((v.like_count + v.comment_count + v.share_count) / v.view_count) * 100 
+      : 0,
+    engagementScore: (v.like_count || 0) + (v.comment_count || 0) * 2 + (v.share_count || 0) * 3
+  }));
+
+  // Sort by engagement score
+  const topVideos = [...videosWithEngagement].sort((a, b) => b.engagementScore - a.engagementScore);
+
+  // Calculate totals
   const totalViews = videos.reduce((sum, v) => sum + (v.view_count || 0), 0);
   const totalLikes = videos.reduce((sum, v) => sum + (v.like_count || 0), 0);
   const totalComments = videos.reduce((sum, v) => sum + (v.comment_count || 0), 0);
   const totalShares = videos.reduce((sum, v) => sum + (v.share_count || 0), 0);
+  const avgEngagementRate = videosWithEngagement.length > 0
+    ? videosWithEngagement.reduce((sum, v) => sum + v.engagementRate, 0) / videosWithEngagement.length
+    : 0;
 
   const stats = [
     { label: 'Followers', value: userInfo.follower_count || 0, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
@@ -120,12 +135,120 @@ export default function TikTokAnalytics() {
           })}
         </div>
 
-        {/* Recent Videos */}
+        {/* Top Performers Analysis */}
+        <Card className="border-green-200 bg-green-50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-green-900">
+              <TrendingUp className="w-5 h-5" />
+              Top Performing Videos
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3 mb-4">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-green-800">Average Engagement Rate:</span>
+                <span className="font-bold text-green-900">{avgEngagementRate.toFixed(2)}%</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-green-800">Best Performing Video:</span>
+                <span className="font-bold text-green-900">
+                  {topVideos[0] ? `${topVideos[0].engagementRate.toFixed(2)}% engagement` : 'N/A'}
+                </span>
+              </div>
+            </div>
+            
+            {topVideos.length === 0 ? (
+              <p className="text-center text-green-700 py-8">No videos found</p>
+            ) : (
+              <div className="space-y-4">
+                {topVideos.slice(0, 5).map((video, index) => (
+                  <div
+                    key={video.id}
+                    className="flex gap-4 p-4 rounded-lg bg-white border border-green-200 hover:border-green-300 hover:shadow-sm transition-all"
+                  >
+                    {/* Rank Badge */}
+                    <div className="flex-shrink-0 w-10 h-10 bg-green-600 text-white rounded-full flex items-center justify-center font-bold">
+                      #{index + 1}
+                    </div>
+
+                    {/* Thumbnail */}
+                    <div className="flex-shrink-0 w-24 h-24 bg-slate-100 rounded-lg overflow-hidden">
+                      {video.cover_image_url ? (
+                        <img 
+                          src={video.cover_image_url} 
+                          alt={video.title || 'Video'} 
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <VideoIcon className="w-8 h-8 text-slate-400" />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Video Info */}
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-slate-900 truncate">
+                        {video.title || video.video_description || 'Untitled Video'}
+                      </h3>
+                      <p className="text-sm text-slate-600 mt-1">
+                        {formatDate(video.create_time)}
+                      </p>
+                      
+                      {/* Stats */}
+                      <div className="flex gap-4 mt-3">
+                        <div className="flex items-center gap-1 text-sm">
+                          <Eye className="w-4 h-4 text-slate-500" />
+                          <span className="text-slate-700">{formatNumber(video.view_count || 0)}</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-sm">
+                          <Heart className="w-4 h-4 text-red-500" />
+                          <span className="text-slate-700">{formatNumber(video.like_count || 0)}</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-sm">
+                          <MessageCircle className="w-4 h-4 text-blue-500" />
+                          <span className="text-slate-700">{formatNumber(video.comment_count || 0)}</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-sm">
+                          <Share2 className="w-4 h-4 text-green-500" />
+                          <span className="text-slate-700">{formatNumber(video.share_count || 0)}</span>
+                        </div>
+                      </div>
+
+                      {video.share_url && (
+                        <a 
+                          href={video.share_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-600 hover:underline mt-2 inline-block"
+                        >
+                          View on TikTok →
+                        </a>
+                      )}
+                    </div>
+
+                    {/* Engagement Metrics */}
+                    <div className="flex-shrink-0 text-right">
+                      <Badge className="bg-green-600 text-white whitespace-nowrap mb-2">
+                        {video.engagementRate.toFixed(2)}% rate
+                      </Badge>
+                      <p className="text-xs text-green-700 font-medium">
+                        Score: {video.engagementScore}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* All Videos */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5" />
-              Recent Videos Performance
+              <VideoIcon className="w-5 h-5" />
+              All Videos Performance
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -133,7 +256,7 @@ export default function TikTokAnalytics() {
               <p className="text-center text-slate-500 py-8">No videos found</p>
             ) : (
               <div className="space-y-4">
-                {videos.map((video) => (
+                {videosWithEngagement.map((video) => (
                   <div
                     key={video.id}
                     className="flex gap-4 p-4 rounded-lg border border-slate-200 hover:border-slate-300 hover:shadow-sm transition-all"
@@ -196,11 +319,13 @@ export default function TikTokAnalytics() {
 
                     {/* Engagement Badge */}
                     <div className="flex-shrink-0">
-                      <Badge variant="secondary" className="whitespace-nowrap">
-                        {video.view_count > 0 
-                          ? `${((video.like_count / video.view_count) * 100).toFixed(1)}% engagement`
-                          : 'No views'
-                        }
+                      <Badge 
+                        variant="secondary" 
+                        className={`whitespace-nowrap ${
+                          video.engagementRate > avgEngagementRate ? 'bg-green-100 text-green-800' : ''
+                        }`}
+                      >
+                        {video.engagementRate.toFixed(2)}%
                       </Badge>
                     </div>
                   </div>
