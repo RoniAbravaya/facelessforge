@@ -482,7 +482,8 @@ Deno.serve(async (req) => {
             console.warn(`[${new Date().toISOString()}] ⚠️ Luma transient error ${response.status} on attempt ${attempt + 1}/${maxRetries + 1}: ${errorText}`);
 
             if (attempt < maxRetries) {
-              const delay = retryDelays[attempt];
+              // For 429 (rate limit exceeded), use longer 30s delay
+              const delay = response.status === 429 ? 30000 : retryDelays[attempt];
               console.warn(`[${new Date().toISOString()}] Retrying in ${delay}ms...`);
               await new Promise(res => setTimeout(res, delay));
               continue;
