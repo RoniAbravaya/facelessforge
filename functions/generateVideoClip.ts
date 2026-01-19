@@ -1,6 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
 
-async function pollLumaGeneration(generationId, apiKey, jobId, base44, maxAttempts = 120) {
+async function pollLumaGeneration(generationId, apiKey, jobId, base44, abortSignal = null, maxAttempts = 120) {
   const pollStartTime = new Date().toISOString();
   console.log(`[${pollStartTime}] [Luma Polling] Starting polling for generation ${generationId}`);
   console.log(`[Luma Polling] Max attempts: ${maxAttempts}, 5 seconds per attempt = ${maxAttempts * 5}s max wait`);
@@ -10,6 +10,11 @@ async function pollLumaGeneration(generationId, apiKey, jobId, base44, maxAttemp
   const maxDurationMs = 10 * 60 * 1000; // 10 minutes max for Luma
   
   for (let i = 0; i < maxAttempts; i++) {
+    // Check for cancellation
+    if (abortSignal?.aborted) {
+      console.log(`[${new Date().toISOString()}] [Luma Polling] Cancelled - stopping poll loop`);
+      return null;
+    }
     // Check if we've exceeded maximum polling duration
     const elapsed = Date.now() - startTime;
     const elapsedSeconds = Math.floor(elapsed / 1000);
@@ -438,11 +443,12 @@ Deno.serve(async (req) => {
       console.log(`API Key first 50 chars: ${apiKey.substring(0, 50)}`);
       console.log(`API Key last 50 chars: ${apiKey.substring(Math.max(0, apiKey.length - 50))}`);
 
-      // Retry logic for transient errors
+      // Retry logic for transient errors with abort controller for polling cancellation
       const maxRetries = 3;
       const retryDelays = [2000, 5000, 10000]; // milliseconds
       let response;
       let lastError;
+      const pollingAbortController = new AbortController();
 
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         // Set timeout to prevent indefinite hangs when provider doesn't respond
@@ -473,7 +479,10 @@ Deno.serve(async (req) => {
               await new Promise(res => setTimeout(res, delay));
               continue;
             } else {
-              throw new Error(`Luma API unavailable (${response.status}). Please try again later.`);
+              // After all retries exhausted, abort any polling and throw specific error
+              pollingAbortController.abort();
+              console.error(`[${new Date().toISOString()}] ⚠️ Luma transient errors exhausted after ${maxRetries + 1} attempts`);
+              throw new Error(`LUMA_TRANSIENT_ERROR: Luma API unavailable (${response.status}) after ${maxRetries + 1} attempts. ${errorText}`);
             }
           }
 
@@ -482,6 +491,7 @@ Deno.serve(async (req) => {
         } catch (fetchError) {
           clearTimeout(timeout);
           if (fetchError.name === 'AbortError') {
+            pollingAbortController.abort();
             throw new Error('Luma generation request timed out after 6 minutes');
           }
           lastError = fetchError;
@@ -494,6 +504,7 @@ Deno.serve(async (req) => {
             continue;
           }
 
+          pollingAbortController.abort();
           throw fetchError;
         }
       }
@@ -546,8 +557,14 @@ Deno.serve(async (req) => {
 
       console.log(`Started Luma generation: ${generationId}`);
 
-      // Poll for completion - pass jobId and base44 for logging
-      const videoUrl = await pollLumaGeneration(generationId, apiKey, jobId, base44);
+      // Poll for completion - pass jobId, base44, and abort signal for cancellation support
+      const videoUrl = await pollLumaGeneration(generationId, apiKey, jobId, base44, pollingAbortController.signal);
+
+      // Check if polling was cancelled
+      if (!videoUrl) {
+        console.log(`[${new Date().toISOString()}] ⚠️ Luma polling was cancelled`);
+        throw new Error('Luma polling was cancelled due to request failure');
+      }
 
       const completionTime = new Date().toISOString();
       const totalTime = Math.floor((Date.now() - new Date(requestStartTime).getTime()) / 1000);
