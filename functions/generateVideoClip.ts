@@ -476,8 +476,8 @@ Deno.serve(async (req) => {
 
           console.log(`[${new Date().toISOString()}] Fetch completed, status: ${response.status}`);
 
-          // Check for transient errors (500, 502, 503, 504)
-          if ([500, 502, 503, 504].includes(response.status)) {
+          // Check for transient errors (429, 500, 502, 503, 504)
+          if ([429, 500, 502, 503, 504].includes(response.status)) {
             const errorText = await response.text();
             console.warn(`[${new Date().toISOString()}] ⚠️ Luma transient error ${response.status} on attempt ${attempt + 1}/${maxRetries + 1}: ${errorText}`);
 
@@ -552,6 +552,22 @@ Deno.serve(async (req) => {
 
       console.log(`[${new Date().toISOString()}] ✅ Luma generation initiated: ${generationId}`);
       console.log(`[${new Date().toISOString()}] Luma will POST updates to: ${callbackUrl}`);
+      
+      // Create pending artifact to track this generation and prevent duplicates
+      await base44.asServiceRole.entities.Artifact.create({
+        job_id: jobId,
+        project_id: projectId,
+        artifact_type: 'video_clip_pending',
+        scene_index: sceneIndex,
+        metadata: {
+          provider: 'luma',
+          generation_id: generationId,
+          status: 'pending',
+          initiated_at: new Date().toISOString()
+        }
+      });
+      
+      console.log(`[${new Date().toISOString()}] Created pending artifact for scene ${sceneIndex}`);
       
       // Return immediately - the callback will handle completion
       return Response.json({ 

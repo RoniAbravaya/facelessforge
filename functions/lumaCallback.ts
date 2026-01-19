@@ -112,11 +112,15 @@ Deno.serve(async (req) => {
       
       console.log(`[Luma Callback] ✅ Scene ${sceneIndex} artifact created`);
       
-      // Check if all clips are done and trigger assembly
-      const job = await base44.asServiceRole.entities.Job.get(jobId);
-      const allArtifacts = await base44.asServiceRole.entities.Artifact.filter({
+      // Check if all clips are done or if we need to continue generation
+      const allCompletedClips = await base44.asServiceRole.entities.Artifact.filter({
         job_id: jobId,
         artifact_type: 'video_clip'
+      });
+      
+      const remainingPending = await base44.asServiceRole.entities.Artifact.filter({
+        job_id: jobId,
+        artifact_type: 'video_clip_pending'
       });
       
       // Get the scene plan to know total number of scenes
@@ -127,9 +131,13 @@ Deno.serve(async (req) => {
       
       if (scenePlanArtifact[0]?.metadata?.scenes) {
         const totalScenes = scenePlanArtifact[0].metadata.scenes.length;
+        const completedCount = allCompletedClips.length;
+        const pendingCount = remainingPending.length;
         
-        if (allArtifacts.length >= totalScenes) {
-          console.log(`[Luma Callback] All ${totalScenes} clips complete, triggering assembly`);
+        console.log(`[Luma Callback] Progress: ${completedCount}/${totalScenes} completed, ${pendingCount} pending`);
+        
+        if (completedCount >= totalScenes) {
+          console.log(`[Luma Callback] ✅ All ${totalScenes} clips complete, triggering assembly`);
           
           // Trigger assembly step
           await base44.asServiceRole.functions.invoke('startVideoGeneration', {
@@ -137,8 +145,17 @@ Deno.serve(async (req) => {
             jobId,
             resumeFromStep: 'video_assembly'
           });
+        } else if (pendingCount === 0) {
+          // No pending clips but not all completed - resume generation
+          console.log(`[Luma Callback] Resuming clip generation (${completedCount}/${totalScenes} done)`);
+          
+          await base44.asServiceRole.functions.invoke('startVideoGeneration', {
+            projectId,
+            jobId,
+            resumeFromStep: 'video_clip_generation'
+          });
         } else {
-          console.log(`[Luma Callback] ${allArtifacts.length}/${totalScenes} clips complete, waiting for more`);
+          console.log(`[Luma Callback] Waiting for ${pendingCount} pending clips to complete`);
         }
       }
       
@@ -147,6 +164,18 @@ Deno.serve(async (req) => {
     } else if (state === 'failed') {
       // Generation failed
       console.error(`[Luma Callback] ❌ Generation ${generationId} failed: ${failure_reason}`);
+      
+      // Remove pending artifact
+      const pendingArtifacts = await base44.asServiceRole.entities.Artifact.filter({
+        job_id: jobId,
+        artifact_type: 'video_clip_pending',
+        scene_index: parseInt(sceneIndex)
+      });
+      
+      for (const pending of pendingArtifacts) {
+        await base44.asServiceRole.entities.Artifact.delete(pending.id);
+        console.log(`[Luma Callback] Removed pending artifact for failed scene ${sceneIndex}`);
+      }
       
       await base44.asServiceRole.entities.JobEvent.create({
         ...eventBase,

@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
   
   try {
-    const { projectId, jobId } = await req.json();
+    const { projectId, jobId, resumeFromStep } = await req.json();
 
     const projects = await base44.asServiceRole.entities.Project.filter({ id: projectId });
     const project = projects[0];
@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
     }
 
     // Start generation asynchronously
-    generateVideo(base44, project, jobId).catch(error => {
+    generateVideo(base44, project, jobId, resumeFromStep).catch(error => {
       console.error('Video generation failed:', error);
       // Error already logged and progress updated in generateVideo catch block
     });
@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
   }
 });
 
-async function generateVideo(base44, project, jobId) {
+async function generateVideo(base44, project, jobId, resumeFromStep = null) {
   const projectId = project.id;
   let job = await base44.asServiceRole.entities.Job.filter({ id: jobId });
   job = job[0] || {};
@@ -71,7 +71,13 @@ async function generateVideo(base44, project, jobId) {
     const steps = ['initialization', 'script_generation', 'scene_planning', 'voiceover_generation', 'video_clip_generation', 'video_assembly', 'completed'];
     let startStepIndex = 0;
 
-    if (job.status === 'failed' || job.status === 'running') {
+    // Support explicit resumeFromStep parameter (from callback)
+    if (resumeFromStep) {
+      const resumeIndex = steps.indexOf(resumeFromStep);
+      startStepIndex = resumeIndex >= 0 ? resumeIndex : 0;
+      console.log(`Resuming from explicit step: ${resumeFromStep} (index ${startStepIndex})`);
+      await logEvent(base44, jobId, 'initialization', 'step_started', `Resuming from ${resumeFromStep}`);
+    } else if (job.status === 'failed' || job.status === 'running') {
       const failedStepIndex = steps.indexOf(job.current_step);
       startStepIndex = failedStepIndex >= 0 ? failedStepIndex : 0;
       console.log(`Resuming from step: ${job.current_step} (index ${startStepIndex})`);
@@ -266,17 +272,24 @@ async function generateVideo(base44, project, jobId) {
     let clipUrls = [];
     if (startStepIndex <= 4) {
       currentStep = 'video_clip_generation';
-      // Get already generated clips
+      
+      // Luma concurrency limit (adjust based on your plan: 3 for Starter, 5+ for higher tiers)
+      const MAX_CONCURRENT_LUMA_JOBS = 3;
+      
+      // Get already generated clips AND pending clips (to prevent duplicates)
       const existingClips = await base44.asServiceRole.entities.Artifact.filter({ job_id: jobId, artifact_type: 'video_clip' });
+      const pendingClips = await base44.asServiceRole.entities.Artifact.filter({ job_id: jobId, artifact_type: 'video_clip_pending' });
+      
       const generatedScenes = new Set(existingClips.map(c => c.scene_index));
+      const pendingScenes = new Set(pendingClips.map(c => c.scene_index));
 
       await updateJobProgress(base44, jobId, projectId, 'running', currentStep, 65);
 
-      console.log(`[Clip Generation] Total scenes: ${scenes.length}, Already generated: ${generatedScenes.size}`);
-      console.log(`[Clip Generation] Scenes array:`, JSON.stringify(scenes.map((s, idx) => ({ idx, duration: s.duration, prompt: s.prompt?.substring(0, 50) }))));
+      console.log(`[Clip Generation] Total scenes: ${scenes.length}, Completed: ${generatedScenes.size}, Pending: ${pendingScenes.size}`);
+      console.log(`[Clip Generation] Pending generations:`, pendingClips.map(p => ({ scene: p.scene_index, generationId: p.metadata?.generation_id })));
 
-      // Only log step_started if this is a fresh start, not a resume
-      if (generatedScenes.size === 0) {
+      // Only log step_started if this is a fresh start
+      if (generatedScenes.size === 0 && pendingScenes.size === 0) {
         await logEvent(base44, jobId, 'video_clip_generation', 'step_started', `Generating ${scenes.length} video clips`);
       }
 
@@ -284,13 +297,47 @@ async function generateVideo(base44, project, jobId) {
         const scene = scenes[i];
         const progressPercent = 65 + Math.floor((i / scenes.length) * 15);
 
+        // Skip if already completed
         if (generatedScenes.has(i)) {
           const clip = existingClips.find(c => c.scene_index === i);
           clipUrls.push(clip.file_url);
-          const timestamp = new Date().toISOString();
-          console.log(`[${timestamp}] [Clip ${i + 1}/${scenes.length}] ⏭️ Skipping - already generated`);
-          await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', `Skipped clip ${i + 1}/${scenes.length}`, progressPercent);
+          console.log(`[Clip ${i + 1}/${scenes.length}] ⏭️ Skipping - already generated`);
+          await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', `Skipped clip ${i + 1}/${scenes.length} (completed)`, progressPercent);
           continue;
+        }
+        
+        // Skip if already pending (avoid duplicates)
+        if (pendingScenes.has(i)) {
+          const pending = pendingClips.find(c => c.scene_index === i);
+          const genId = pending?.metadata?.generation_id || 'unknown';
+          console.log(`[Clip ${i + 1}/${scenes.length}] ⏳ Skipping - already in progress (${genId})`);
+          await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', 
+            `Scene ${i + 1} in progress (generation ${genId})`, progressPercent);
+          continue;
+        }
+        
+        // Check Luma concurrency limit (only for Luma provider)
+        if (videoIntegration.provider_type === 'video_luma') {
+          const currentPending = await base44.asServiceRole.entities.Artifact.filter({ 
+            job_id: jobId, 
+            artifact_type: 'video_clip_pending' 
+          });
+          
+          if (currentPending.length >= MAX_CONCURRENT_LUMA_JOBS) {
+            console.log(`[Clip Generation] ⏸️ Luma concurrency limit reached (${currentPending.length}/${MAX_CONCURRENT_LUMA_JOBS})`);
+            console.log(`[Clip Generation] Pausing - callback will resume when jobs complete`);
+            await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', 
+              `Paused at scene ${i + 1} - waiting for ${currentPending.length} active Luma jobs to complete`, 
+              progressPercent,
+              { 
+                pausedAtScene: i, 
+                activeLumaJobs: currentPending.length, 
+                maxConcurrent: MAX_CONCURRENT_LUMA_JOBS 
+              }
+            );
+            // Exit loop - callback will trigger continuation
+            return;
+          }
         }
 
         const clipStartTime = Date.now();
