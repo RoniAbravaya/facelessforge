@@ -402,11 +402,21 @@ Deno.serve(async (req) => {
       }
       console.log(`[Luma Duration Mapping] Requested: ${durationNum}s -> Using: ${lumaDuration}s (Luma supports only 5s, 9s, 10s)`);
 
-      // Construct callback URL (projectId and sceneIndex already parsed from requestData)
+      // Construct callback URL using current app domain
+      const appBaseUrl = Deno.env.get('BASE44_APP_BASE_URL') || `https://${req.headers.get('host')}`;
+      const callbackUrl = `${appBaseUrl}/api/functions/lumaCallback?jobId=${jobId}&sceneIndex=${sceneIndex || 0}&projectId=${projectId}`;
+
+      // Validate and log callback configuration
       const appId = Deno.env.get('BASE44_APP_ID');
-      const callbackUrl = `https://app-${appId}.base44.app/api/functions/lumaCallback?jobId=${jobId}&sceneIndex=${sceneIndex || 0}&projectId=${projectId}`;
-      
-      console.log(`[Luma] Callback URL: ${callbackUrl}`);
+      console.log(`[Luma] Callback configuration:`);
+      console.log(`  - BASE44_APP_ID: ${appId || 'NOT SET'}`);
+      console.log(`  - BASE44_APP_BASE_URL: ${Deno.env.get('BASE44_APP_BASE_URL') || 'NOT SET (using host header)'}`);
+      console.log(`  - Request Host: ${req.headers.get('host')}`);
+      console.log(`  - Final Callback URL: ${callbackUrl}`);
+
+      if (!appBaseUrl || appBaseUrl.includes('undefined')) {
+        console.warn(`[Luma] ⚠️ WARNING: Callback URL may be invalid - missing environment configuration`);
+      }
 
       // Start Luma generation
       const lumaHeaders = {
