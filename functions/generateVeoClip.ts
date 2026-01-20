@@ -162,17 +162,17 @@ Deno.serve(async (req) => {
       throw new Error('Missing required parameters: apiKey, prompt');
     }
     
-    // Map duration to Veo-supported values (4, 6, or 8)
-    const rawDuration = Math.round(Number(duration));
-    let finalDuration = 8;
+    // Map duration to Veo-supported values (4, 6, or 8) - MUST be numeric
+    const rawDuration = Number(duration);
+    let finalDuration;
     if (rawDuration <= 4) {
       finalDuration = 4;
-    } else if (rawDuration <= 6) {
+    } else if (rawDuration > 4 && rawDuration <= 6) {
       finalDuration = 6;
     } else {
       finalDuration = 8;
     }
-    console.log(`[Veo] Duration mapping: ${rawDuration}s -> ${finalDuration}s (Veo supports 4s, 6s, 8s)`);
+    console.log(`[Veo] Duration mapping: ${rawDuration}s -> ${finalDuration} (numeric, Veo supports 4, 6, or 8)`);
     
     const requestBody = {
       instances: [{
@@ -180,9 +180,12 @@ Deno.serve(async (req) => {
       }],
       parameters: {
         aspectRatio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '16:9' ? '16:9' : '16:9',
-        durationSeconds: finalDuration.toString()
+        durationSeconds: finalDuration // MUST be number, not string
       }
     };
+    
+    console.log(`[Veo] Request body:`, JSON.stringify(requestBody, null, 2));
+    console.log(`[Veo] durationSeconds type: ${typeof requestBody.parameters.durationSeconds}, value: ${requestBody.parameters.durationSeconds}`);
     
     // Retry logic for internal server errors
     const maxRetries = 2; // Retry up to 2 times on internal errors
@@ -201,7 +204,9 @@ Deno.serve(async (req) => {
         let response;
         
         for (let attempt = 0; attempt <= maxApiRetries; attempt++) {
-          console.log(`[Veo] API attempt ${attempt + 1}/${maxApiRetries + 1} (retry ${retryCount}/${maxRetries})`);
+          const attemptStartTime = Date.now();
+          console.log(`[Veo] API attempt ${attempt + 1}/${maxApiRetries + 1} (generation retry ${retryCount}/${maxRetries})`);
+          console.log(`[Veo] Request params: duration=${finalDuration} (${typeof finalDuration}), aspectRatio=${requestBody.parameters.aspectRatio}`);
           
           try {
             response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/veo-3.1-generate-preview:predictLongRunning', {
@@ -214,18 +219,22 @@ Deno.serve(async (req) => {
               signal: AbortSignal.timeout(6 * 60 * 1000)
             });
             
+            const attemptElapsed = Math.floor((Date.now() - attemptStartTime) / 1000);
+            console.log(`[Veo] API response received after ${attemptElapsed}s - Status: ${response.status}`);
+            
             // Retry on transient errors (500, 502, 503, 504)
             if ([500, 502, 503, 504].includes(response.status)) {
               const errorText = await response.text();
-              console.warn(`[Veo] Transient error ${response.status} on attempt ${attempt + 1}`);
+              console.warn(`[Veo] ⚠️ Transient error ${response.status} on API attempt ${attempt + 1}/${maxApiRetries + 1}`);
+              console.warn(`[Veo] Error details: ${errorText.substring(0, 200)}`);
               
               if (attempt < maxApiRetries) {
                 const delay = apiRetryDelays[attempt];
-                console.warn(`[Veo] Retrying API call in ${delay}ms...`);
+                console.warn(`[Veo] Will retry API call in ${delay}ms (${Math.floor(delay/1000)}s)...`);
                 await new Promise(res => setTimeout(res, delay));
                 continue;
               } else {
-                throw new Error(`VEO_TRANSIENT_ERROR: Veo API unavailable (${response.status})`);
+                throw new Error(`VEO_TRANSIENT_ERROR: Veo API unavailable (${response.status}) after ${maxApiRetries + 1} attempts`);
               }
             }
             
@@ -251,15 +260,31 @@ Deno.serve(async (req) => {
           const statusCode = response.status;
           
           console.error(`[Veo] API error (${statusCode}):`, errorText);
+          console.error(`[Veo] Failed request body:`, JSON.stringify(requestBody, null, 2));
           
           // Check if this is an internal server error that should be retried
           if ([500, 502, 503, 504].includes(statusCode) || errorText.includes('internal server issue')) {
             if (retryCount < maxRetries) {
-              console.warn(`[Veo] Internal server error detected, will retry generation (${retryCount + 1}/${maxRetries})`);
+              console.warn(`[Veo] Internal server error (${statusCode}) detected, will retry generation (attempt ${retryCount + 1}/${maxRetries}) after ${retryDelay}ms delay`);
               continue; // Retry the entire generation
             } else {
               throw new Error(`Veo internal server error after ${maxRetries + 1} attempts (${statusCode}): ${errorText}`);
             }
+          }
+          
+          // Check for durationSeconds validation error
+          if (statusCode === 400 && errorText.includes('durationSeconds') && errorText.includes('needs to be a number')) {
+            console.error(`[Veo] ❌ CRITICAL: durationSeconds validation failed`);
+            console.error(`[Veo] Current durationSeconds: ${requestBody.parameters.durationSeconds} (type: ${typeof requestBody.parameters.durationSeconds})`);
+            
+            // Force numeric value and retry once
+            if (retryCount === 0) {
+              console.warn(`[Veo] Forcing durationSeconds to numeric value and retrying...`);
+              requestBody.parameters.durationSeconds = Number(finalDuration);
+              continue;
+            }
+            
+            throw new Error(`Veo API error: durationSeconds must be a number. Current value: ${requestBody.parameters.durationSeconds} (${typeof requestBody.parameters.durationSeconds})`);
           }
           
           // Non-retryable error
