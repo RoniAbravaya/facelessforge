@@ -1,13 +1,22 @@
+/**
+ * Generate AI-powered video project suggestions based on TikTok analytics and trends.
+ * Uses past video performance data to recommend content likely to succeed.
+ */
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
+import { createRequestLogger, getUserFriendlyError } from './utils/logger.ts';
 
 Deno.serve(async (req) => {
+  const logger = createRequestLogger(req, 'generateProjectSuggestions');
   const base44 = createClientFromRequest(req);
   
   try {
     const user = await base44.auth.me();
     if (!user) {
+      logger.warn('Unauthorized access attempt');
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    logger.info('Starting suggestion generation', { userId: user.id });
 
     const { excludeSuggestions = [] } = await req.json();
 
@@ -38,7 +47,7 @@ Deno.serve(async (req) => {
         avgEngagement = videosWithEngagement.reduce((sum, v) => sum + v.engagementRate, 0) / videosWithEngagement.length;
       }
     } catch (analyticsError) {
-      console.log('[Suggestions] No TikTok analytics available:', analyticsError.message);
+      logger.info('No TikTok analytics available', { error: analyticsError.message });
     }
 
     // Get trending topics from LLM
@@ -50,7 +59,7 @@ Deno.serve(async (req) => {
       });
       trendingTopics = trendingResult;
     } catch (trendError) {
-      console.log('[Suggestions] Could not fetch trending topics:', trendError.message);
+      logger.info('Could not fetch trending topics', { error: trendError.message });
       trendingTopics = 'Focus on educational content, storytelling, and viral challenges.';
     }
 
@@ -113,8 +122,20 @@ Make it unique, engaging, and based on proven viral patterns. Focus on hooks, em
       timestamp: new Date().toISOString()
     };
     
-    await base44.auth.updateMe({
-      suggested_projects: [...existingSuggestions.slice(-19), newSuggestion] // Keep last 20
+    try {
+      await base44.auth.updateMe({
+        suggested_projects: [...existingSuggestions.slice(-19), newSuggestion] // Keep last 20
+      });
+    } catch (updateError) {
+      logger.warn('Failed to save suggestion to user profile', { error: updateError.message });
+      // Continue anyway - suggestion was still generated
+    }
+
+    logger.info('Suggestion generated successfully', {
+      hasAnalytics: topVideos.length > 0,
+      topPerformers: topVideos.length,
+      avgEngagement: avgEngagement.toFixed(2),
+      titlePreview: suggestionResult.title?.substring(0, 40)
     });
 
     return Response.json({
@@ -126,10 +147,12 @@ Make it unique, engaging, and based on proven viral patterns. Focus on hooks, em
     });
 
   } catch (error) {
-    console.error('[Suggestions] Error:', error);
+    logger.error('Suggestion generation failed', error);
+    
+    const userMessage = getUserFriendlyError(error, 'Suggestion generation');
     return Response.json({ 
-      error: error.message,
-      details: error.stack 
+      error: userMessage,
+      details: error instanceof Error ? error.message : String(error)
     }, { status: 500 });
   }
 });
