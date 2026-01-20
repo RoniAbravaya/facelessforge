@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ArrowLeft, ArrowRight, Sparkles, Loader2, Video as VideoIcon, Calendar, Wand2, Layout } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import SuggestionField from '../components/project/SuggestionField';
+import QuotaWarning from '../components/project/QuotaWarning';
+import InsightSuggestions from '../components/project/InsightSuggestions';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -109,24 +111,35 @@ export default function CreateProject() {
 
   const createProject = useMutation({
     mutationFn: async (data) => {
+      // Check quota
+      const { data: quotaStatus } = await base44.functions.invoke('checkUserQuota', {});
+      
       const project = await base44.entities.Project.create(data);
       
       const job = await base44.entities.Job.create({
         project_id: project.id,
-        status: 'pending',
+        status: quotaStatus.should_queue ? 'queued' : 'pending',
         current_step: 'initialization',
-        progress: 0
+        progress: 0,
+        queued_reason: quotaStatus.should_queue ? 'quota_exceeded' : null
       });
 
-      await base44.functions.invoke('startVideoGeneration', {
-        projectId: project.id,
-        jobId: job.id
-      });
+      if (!quotaStatus.should_queue) {
+        await base44.functions.invoke('incrementUsage', {});
+        await base44.functions.invoke('startVideoGeneration', {
+          projectId: project.id,
+          jobId: job.id
+        });
+      }
 
-      return project;
+      return { project, queued: quotaStatus.should_queue };
     },
-    onSuccess: (project) => {
-      toast.success('Project created! Generation started.');
+    onSuccess: ({ project, queued }) => {
+      if (queued) {
+        toast.success('Project created and queued! Will process tomorrow at quota reset.');
+      } else {
+        toast.success('Project created! Generation started.');
+      }
       navigate(createPageUrl('ProjectDetails') + '?id=' + project.id);
     },
     onError: (error) => {
@@ -190,6 +203,9 @@ export default function CreateProject() {
             <p className="text-slate-600 text-lg">
               Step {step} of 4: {step === 1 ? 'Video Details' : step === 2 ? 'Select Providers' : step === 3 ? 'TikTok Settings' : 'Review & Create'}
             </p>
+            <div className="mt-4">
+              <QuotaWarning />
+            </div>
           </motion.div>
         </div>
 
@@ -223,6 +239,27 @@ export default function CreateProject() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-6 space-y-6">
+                  {/* AI Insights */}
+                  <InsightSuggestions
+                    onApply={(insight) => {
+                      if (insight.insight_type === 'topic') {
+                        setFormData({ ...formData, topic: insight.attribute_value });
+                        toast.success(`Applied topic suggestion: ${insight.attribute_value}`);
+                      } else if (insight.insight_type === 'style') {
+                        setFormData({ ...formData, style: insight.attribute_value });
+                        toast.success(`Applied style suggestion: ${insight.attribute_value}`);
+                      } else if (insight.insight_type === 'duration') {
+                        const duration = insight.attribute_value.includes('60s+') ? 60 : 
+                                       insight.attribute_value.includes('30-60s') ? 45 : 30;
+                        setFormData({ ...formData, duration });
+                        toast.success(`Applied duration suggestion: ${duration}s`);
+                      } else if (insight.insight_type === 'aspect_ratio') {
+                        setFormData({ ...formData, aspectRatio: insight.attribute_value });
+                        toast.success(`Applied aspect ratio: ${insight.attribute_value}`);
+                      }
+                    }}
+                  />
+
                   {/* Template Selection */}
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">

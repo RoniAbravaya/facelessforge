@@ -36,7 +36,8 @@ Deno.serve(async (req) => {
   const base44 = createClientFromRequest(req);
   
   try {
-    const { projectId, jobId, resumeFromStep } = await req.json();
+    const payload = await req.json();
+    const { projectId, jobId, resumeFromStep } = payload;
 
     const projects = await base44.asServiceRole.entities.Project.filter({ id: projectId });
     const project = projects[0];
