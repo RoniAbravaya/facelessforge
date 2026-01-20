@@ -26,6 +26,12 @@ import { toast } from 'sonner';
 
 // Role configurations with permissions
 const ROLES = {
+  owner: {
+    name: 'Owner',
+    color: 'bg-amber-100 text-amber-700',
+    permissions: ['all'],
+    description: 'App owner - cannot be modified'
+  },
   superadmin: {
     name: 'Super Admin',
     color: 'bg-red-100 text-red-700',
@@ -91,29 +97,26 @@ export default function AdminPanel() {
     }
   });
 
-  // Fetch publish jobs for queue monitoring
+  // Fetch publish jobs for queue monitoring (using ScheduledPost as the source)
   const { data: publishJobs = [], isLoading: jobsLoading, refetch: refetchJobs } = useQuery({
     queryKey: ['publishJobs'],
     queryFn: async () => {
       try {
-        const jobs = await base44.entities.PublishJob.list('-created_date', 50);
-        return jobs;
+        // Use ScheduledPost entity directly for queue monitoring
+        const posts = await base44.entities.ScheduledPost.list('-created_date', 50);
+        return posts.map(p => ({
+          id: p.id,
+          post_id: p.id,
+          status: p.status === 'published' ? 'completed' : p.status === 'failed' ? 'failed' : p.status === 'publishing' ? 'processing' : 'pending',
+          platform: p.platform || 'tiktok',
+          scheduled_for: p.scheduled_for,
+          error_message: p.error_message,
+          created_date: p.created_date,
+          title: p.title,
+          caption: p.caption
+        }));
       } catch {
-        // Fallback: try to get scheduled posts
-        try {
-          const posts = await base44.entities.ScheduledPost.list('-created_date', 50);
-          return posts.map(p => ({
-            id: p.id,
-            post_id: p.id,
-            status: p.status === 'published' ? 'completed' : p.status === 'failed' ? 'failed' : 'pending',
-            platform: p.platform,
-            scheduled_for: p.scheduled_for,
-            error_message: p.error_message,
-            created_date: p.created_date
-          }));
-        } catch {
-          return [];
-        }
+        return [];
       }
     },
     refetchInterval: 10000 // Refetch every 10 seconds
@@ -182,6 +185,11 @@ export default function AdminPanel() {
   // Update user mutation
   const updateUserMutation = useMutation({
     mutationFn: async ({ id, ...data }) => {
+      // Check if user is the owner (can't update owner role)
+      const userToUpdate = users.find(u => u.id === id);
+      if (userToUpdate?.role === 'owner') {
+        throw new Error('Cannot modify the app owner');
+      }
       return await base44.entities.User.update(id, data);
     },
     onSuccess: () => {
@@ -190,7 +198,12 @@ export default function AdminPanel() {
       toast.success('User updated successfully');
     },
     onError: (error) => {
-      toast.error(`Failed to update user: ${error.message}`);
+      // Handle specific error for owner update
+      if (error.message?.includes('owner')) {
+        toast.error('Cannot modify the app owner\'s role or status');
+      } else {
+        toast.error(`Failed to update user: ${error.message}`);
+      }
     }
   });
 
@@ -909,6 +922,9 @@ function EditUserDialog({ user, open, onOpenChange, onSave, isLoading }) {
     status: user?.status || 'active'
   });
 
+  // Check if user is the owner (cannot be edited)
+  const isOwner = user?.role === 'owner';
+
   React.useEffect(() => {
     if (user) {
       setFormData({
@@ -920,6 +936,9 @@ function EditUserDialog({ user, open, onOpenChange, onSave, isLoading }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (isOwner) {
+      return; // Don't allow saving for owner
+    }
     onSave(formData);
   };
 
@@ -931,7 +950,9 @@ function EditUserDialog({ user, open, onOpenChange, onSave, isLoading }) {
         <DialogHeader>
           <DialogTitle>Edit User</DialogTitle>
           <DialogDescription>
-            Update user role and status
+            {isOwner 
+              ? 'The app owner cannot be modified' 
+              : 'Update user role and status'}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -944,49 +965,64 @@ function EditUserDialog({ user, open, onOpenChange, onSave, isLoading }) {
             <div>
               <p className="font-medium">{user.name || 'No name'}</p>
               <p className="text-sm text-slate-500">{user.email}</p>
+              {isOwner && (
+                <Badge className="mt-1 bg-amber-100 text-amber-700 border-0">App Owner</Badge>
+              )}
             </div>
           </div>
 
-          <div>
-            <Label>Role</Label>
-            <Select
-              value={formData.role}
-              onValueChange={(value) => setFormData(prev => ({ ...prev, role: value }))}
-            >
-              <SelectTrigger className="mt-2">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(ROLES).map(([key, role]) => (
-                  <SelectItem key={key} value={key}>{role.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {isOwner ? (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-sm text-amber-800">
+                The app owner's role and status cannot be modified. This is a system restriction.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div>
+                <Label>Role</Label>
+                <Select
+                  value={formData.role}
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, role: value }))}
+                >
+                  <SelectTrigger className="mt-2">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(ROLES).map(([key, role]) => (
+                      <SelectItem key={key} value={key}>{role.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-          <div>
-            <Label>Status</Label>
-            <Select
-              value={formData.status}
-              onValueChange={(value) => setFormData(prev => ({ ...prev, status: value }))}
-            >
-              <SelectTrigger className="mt-2">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="suspended">Suspended</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+              <div>
+                <Label>Status</Label>
+                <Select
+                  value={formData.status}
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, status: value }))}
+                >
+                  <SelectTrigger className="mt-2">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="suspended">Suspended</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
+              {isOwner ? 'Close' : 'Cancel'}
             </Button>
-            <Button type="submit" disabled={isLoading} className="bg-slate-900 hover:bg-slate-800">
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Changes'}
-            </Button>
+            {!isOwner && (
+              <Button type="submit" disabled={isLoading} className="bg-slate-900 hover:bg-slate-800">
+                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Changes'}
+              </Button>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>
