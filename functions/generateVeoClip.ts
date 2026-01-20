@@ -180,7 +180,7 @@ Deno.serve(async (req) => {
       }],
       parameters: {
         aspectRatio: aspectRatio === '9:16' ? '9:16' : aspectRatio === '16:9' ? '16:9' : '16:9',
-        durationSeconds: finalDuration
+        durationSeconds: finalDuration.toString()
       }
     };
     
@@ -214,8 +214,8 @@ Deno.serve(async (req) => {
               signal: AbortSignal.timeout(6 * 60 * 1000)
             });
             
-            // Retry on transient errors
-            if ([502, 503, 504].includes(response.status)) {
+            // Retry on transient errors (500, 502, 503, 504)
+            if ([500, 502, 503, 504].includes(response.status)) {
               const errorText = await response.text();
               console.warn(`[Veo] Transient error ${response.status} on attempt ${attempt + 1}`);
               
