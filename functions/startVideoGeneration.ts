@@ -360,6 +360,9 @@ async function generateVideo(base44, project, jobId, resumeFromStep = null) {
         await logEvent(base44, jobId, 'video_clip_generation', 'step_started', `Generating ${scenes.length} video clips`);
       }
 
+      // Track failed scenes to continue processing
+      const failedScenes = [];
+
       for (let i = 0; i < scenes.length; i++) {
         const scene = scenes[i];
         const progressPercent = 65 + Math.floor((i / scenes.length) * 15);
@@ -543,11 +546,45 @@ async function generateVideo(base44, project, jobId, resumeFromStep = null) {
             }
           );
 
-          throw new Error(`Video clip ${i + 1} generation failed: ${clipError.response?.data?.error || clipError.message}`);
+          // Track failed scene but continue with others (unless critical error)
+          const isCriticalError = clipError.message?.includes('API key') || 
+                                 clipError.message?.includes('authentication') ||
+                                 clipError.message?.includes('authorization');
+
+          if (isCriticalError) {
+            console.error(`[Clip ${i + 1}] Critical error detected - aborting generation`);
+            throw new Error(`Video clip ${i + 1} generation failed (critical): ${clipError.message}`);
+          }
+
+          // Non-critical error - log and continue
+          failedScenes.push({ index: i, prompt: scene.prompt, error: clipError.message });
+          console.warn(`[Clip ${i + 1}] Non-critical error - continuing with remaining scenes (${failedScenes.length} failed so far)`);
         }
       }
 
-      await logEvent(base44, jobId, 'video_clip_generation', 'step_finished', 'All video clips generated', 80);
+      // Summary of clip generation
+      const successCount = clipUrls.length;
+      const failureCount = failedScenes.length;
+      const totalScenes = scenes.length;
+
+      if (failedScenes.length > 0) {
+        const failedSummary = failedScenes.map(f => `Scene ${f.index + 1}: ${f.error}`).join('; ');
+        console.warn(`[Clip Generation] ⚠️ Completed with ${failureCount} failures: ${failedSummary}`);
+
+        await logEvent(base44, jobId, 'video_clip_generation', 'step_finished', 
+          `Video clips generated: ${successCount}/${totalScenes} successful, ${failureCount} failed`, 
+          80,
+          { successCount, failureCount, totalScenes, failedScenes }
+        );
+
+        // If too many scenes failed, abort
+        if (failureCount >= totalScenes / 2) {
+          throw new Error(`Too many scene failures (${failureCount}/${totalScenes}). Please check provider status and retry.`);
+        }
+      } else {
+        console.log(`[Clip Generation] ✅ All ${totalScenes} clips generated successfully`);
+        await logEvent(base44, jobId, 'video_clip_generation', 'step_finished', 'All video clips generated', 80);
+      }
     } else {
       const existingClips = await base44.asServiceRole.entities.Artifact.filter({ job_id: jobId, artifact_type: 'video_clip' });
       clipUrls = existingClips.sort((a, b) => a.scene_index - b.scene_index).map(c => c.file_url);

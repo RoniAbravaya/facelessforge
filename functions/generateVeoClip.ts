@@ -70,8 +70,21 @@ async function pollVeoGeneration(operationName, veoApiKey, geminiApiKey, base44,
     
     if (data.done) {
       if (data.error) {
-        console.error(`[Veo] Generation failed:`, data.error);
-        throw new Error(`Veo generation failed: ${data.error.message}`);
+        const errorStatus = data.error.status || '';
+        const errorMessage = data.error.message || '';
+        
+        console.error(`[Veo] Generation error (status: ${errorStatus}):`, data.error);
+        
+        // Check if this is an internal/transient error that should be retried
+        if (errorStatus === 'INTERNAL' || errorMessage.toLowerCase().includes('internal server issue')) {
+          console.warn(`[Veo] ⚠️ Transient internal error detected - marking for retry`);
+          const error = new Error(`VEO_INTERNAL_ERROR: ${errorMessage}`);
+          error.isTransient = true;
+          error.errorDetails = data.error;
+          throw error;
+        }
+        
+        throw new Error(`Veo generation failed: ${errorMessage}`);
       }
       
       // Check for inline data first
@@ -188,15 +201,17 @@ Deno.serve(async (req) => {
     console.log(`[Veo] durationSeconds type: ${typeof requestBody.parameters.durationSeconds}, value: ${requestBody.parameters.durationSeconds}`);
     
     // Retry logic for internal server errors
-    const maxRetries = 2; // Retry up to 2 times on internal errors
-    const retryDelay = 5000; // 5 seconds between retries
+    const maxGenerationRetries = 2; // Retry up to 2 times on internal errors
+    const generationRetryDelay = 10000; // 10 seconds between generation retries
     
-    for (let retryCount = 0; retryCount <= maxRetries; retryCount++) {
+    for (let retryCount = 0; retryCount <= maxGenerationRetries; retryCount++) {
       try {
         if (retryCount > 0) {
-          console.log(`[Veo] Retry ${retryCount}/${maxRetries} after internal error`);
-          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          console.log(`[Veo] 🔄 Generation retry ${retryCount}/${maxGenerationRetries} after internal error (waiting ${generationRetryDelay/1000}s)`);
+          await new Promise(resolve => setTimeout(resolve, generationRetryDelay));
         }
+        
+        console.log(`[Veo] Starting generation attempt ${retryCount + 1}/${maxGenerationRetries + 1}`);
         
         // Transient error retry for API call
         const maxApiRetries = 3;
@@ -264,11 +279,11 @@ Deno.serve(async (req) => {
           
           // Check if this is an internal server error that should be retried
           if ([500, 502, 503, 504].includes(statusCode) || errorText.includes('internal server issue')) {
-            if (retryCount < maxRetries) {
-              console.warn(`[Veo] Internal server error (${statusCode}) detected, will retry generation (attempt ${retryCount + 1}/${maxRetries}) after ${retryDelay}ms delay`);
+            if (retryCount < maxGenerationRetries) {
+              console.warn(`[Veo] ⚠️ Internal server error (${statusCode}) detected, will retry generation (attempt ${retryCount + 1}/${maxGenerationRetries}) after ${generationRetryDelay}ms delay`);
               continue; // Retry the entire generation
             } else {
-              throw new Error(`Veo internal server error after ${maxRetries + 1} attempts (${statusCode}): ${errorText}`);
+              throw new Error(`Veo internal server error after ${maxGenerationRetries + 1} attempts (${statusCode}): ${errorText}`);
             }
           }
           
@@ -299,39 +314,58 @@ Deno.serve(async (req) => {
         const data = await response.json();
         const operationName = data.name;
         
-        console.log(`[Veo] Operation initiated: ${operationName}`);
+        console.log(`[Veo] Operation initiated: ${operationName} (attempt ${retryCount + 1}/${maxGenerationRetries + 1})`);
         
         // Poll for completion (with internal error retry)
         try {
           const videoUrl = await pollVeoGeneration(operationName, apiKey, geminiApiKey, base44, jobId);
           
-          console.log(`[Veo] ✅ Video generated: ${videoUrl}`);
+          console.log(`[Veo] ✅ Video generated successfully: ${videoUrl}`);
           return Response.json({ videoUrl, provider: 'veo' });
           
         } catch (pollError) {
-          // Check if polling failed due to internal error
-          const errorMsg = pollError.message || '';
-          if ((errorMsg.includes('internal server issue') || errorMsg.includes('500') || errorMsg.includes('502') || errorMsg.includes('503') || errorMsg.includes('504')) && retryCount < maxRetries) {
-            console.warn(`[Veo] Polling failed with internal error, will retry generation (${retryCount + 1}/${maxRetries})`);
+          // Check if polling failed due to transient internal error
+          const isTransient = pollError.isTransient || 
+                             pollError.message?.includes('VEO_INTERNAL_ERROR') ||
+                             pollError.message?.includes('internal server issue') ||
+                             pollError.message?.includes('500') || 
+                             pollError.message?.includes('502') || 
+                             pollError.message?.includes('503') || 
+                             pollError.message?.includes('504');
+          
+          if (isTransient && retryCount < maxGenerationRetries) {
+            console.warn(`[Veo] ⚠️ Polling failed with transient error (attempt ${retryCount + 1}/${maxGenerationRetries + 1}): ${pollError.message}`);
+            console.warn(`[Veo] Will retry entire generation after ${generationRetryDelay/1000}s delay`);
             continue; // Retry the entire generation
           }
           
-          throw pollError; // Non-retryable polling error
+          console.error(`[Veo] ❌ Polling failed with non-retryable error or retries exhausted: ${pollError.message}`);
+          throw pollError; // Non-retryable or final retry failure
         }
         
       } catch (generationError) {
         // Check if this is the last retry
-        if (retryCount >= maxRetries) {
+        if (retryCount >= maxGenerationRetries) {
+          console.error(`[Veo] ❌ All ${maxGenerationRetries + 1} generation attempts failed`);
           throw generationError;
         }
         
-        // Check if error is retryable
-        const errorMsg = generationError.message || '';
-        if (errorMsg.includes('internal server issue') || errorMsg.includes('500') || errorMsg.includes('502') || errorMsg.includes('503') || errorMsg.includes('504')) {
-          console.warn(`[Veo] Generation error (retry ${retryCount + 1}/${maxRetries}):`, errorMsg);
+        // Check if error is retryable (transient)
+        const isTransient = generationError.isTransient ||
+                           generationError.message?.includes('VEO_INTERNAL_ERROR') ||
+                           generationError.message?.includes('internal server issue') ||
+                           generationError.message?.includes('500') || 
+                           generationError.message?.includes('502') || 
+                           generationError.message?.includes('503') || 
+                           generationError.message?.includes('504');
+        
+        if (isTransient) {
+          console.warn(`[Veo] ⚠️ Generation failed with transient error (attempt ${retryCount + 1}/${maxGenerationRetries + 1}):`, generationError.message);
+          console.warn(`[Veo] Will retry entire generation after ${generationRetryDelay/1000}s delay`);
           continue; // Retry
         }
         
+        console.error(`[Veo] ❌ Generation failed with non-retryable error:`, generationError.message);
         throw generationError; // Non-retryable error
       }
     }
