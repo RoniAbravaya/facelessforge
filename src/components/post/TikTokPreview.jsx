@@ -2,9 +2,9 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Smartphone } from 'lucide-react';
 
-export default function TikTokPreview({ caption, hashtags, videoUrl }) {
+export default function TikTokPreview({ caption = '', hashtags = '', videoUrl }) {
   const fullCaption = hashtags ? `${caption}\n\n${hashtags}` : caption;
-  const charCount = fullCaption.length;
+  const charCount = fullCaption?.length || 0;
   const isValid = charCount <= 2200;
 
   return (
