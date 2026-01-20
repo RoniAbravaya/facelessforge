@@ -1,3 +1,4 @@
+import AdminPanel from './pages/AdminPanel';
 import AnalyticsDashboard from './pages/AnalyticsDashboard';
 import ContentCalendar from './pages/ContentCalendar';
 import CreatePost from './pages/CreatePost';
@@ -6,11 +7,12 @@ import Dashboard from './pages/Dashboard';
 import Integrations from './pages/Integrations';
 import ProjectDetails from './pages/ProjectDetails';
 import TikTokAnalytics from './pages/TikTokAnalytics';
-import AdminPanel from './pages/AdminPanel';
+import Billing from './pages/Billing';
 import __Layout from './Layout.jsx';
 
 
 export const PAGES = {
+    "AdminPanel": AdminPanel,
     "AnalyticsDashboard": AnalyticsDashboard,
     "ContentCalendar": ContentCalendar,
     "CreatePost": CreatePost,
@@ -19,7 +21,7 @@ export const PAGES = {
     "Integrations": Integrations,
     "ProjectDetails": ProjectDetails,
     "TikTokAnalytics": TikTokAnalytics,
-    "AdminPanel": AdminPanel,
+    "Billing": Billing,
 }
 
 export const pagesConfig = {
