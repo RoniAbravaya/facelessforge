@@ -220,7 +220,7 @@ Deno.serve(async (req) => {
         
         for (let attempt = 0; attempt <= maxApiRetries; attempt++) {
           const attemptStartTime = Date.now();
-          console.log(`[Veo] API attempt ${attempt + 1}/${maxApiRetries + 1} (generation retry ${retryCount}/${maxRetries})`);
+          console.log(`[Veo] API attempt ${attempt + 1}/${maxApiRetries + 1} (generation retry ${retryCount}/${maxGenerationRetries})`);
           console.log(`[Veo] Request params: duration=${finalDuration} (${typeof finalDuration}), aspectRatio=${requestBody.parameters.aspectRatio}`);
           
           try {
