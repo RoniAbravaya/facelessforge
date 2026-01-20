@@ -217,31 +217,57 @@ export default function ClientAssembly({ assemblyData, projectId, jobId, onCompl
       setProgress(70);
       addLog('Clips concatenated', 'success');
 
-      // Step 4: Mix audio
+      // Step 4: Mix audio with compression
+      // Re-encode with H.264 to reduce file size below 50MB UploadFile limit
+      // CRF 28 provides good quality/size balance (~30-50% smaller than copy)
+      // Adjust CRF: lower (24-26) = better quality but larger, higher (30-32) = smaller but lower quality
       setStatus('mixing');
-      setMessage('Mixing audio with video...');
-      addLog('Mixing audio track...', 'info');
+      setMessage('Mixing audio and compressing video...');
+      addLog('Mixing audio track and compressing video...', 'info');
       setProgress(75);
 
       await ffmpeg.exec([
         '-i', 'concat.mp4',
         '-i', `voiceover.${voiceoverExt}`,
-        '-c:v', 'copy',
+        '-c:v', 'libx264',
+        '-preset', 'fast',
+        '-crf', '28',
         '-c:a', 'aac',
-        '-b:a', '192k',
+        '-b:a', '128k',
         '-shortest',
         '-y',
         'final.mp4'
       ]);
       setProgress(85);
-      addLog('Audio mixed successfully', 'success');
+      addLog('Audio mixed and video compressed successfully', 'success');
 
       // Step 5: Read final video
       setMessage('Reading final video...');
       addLog('Reading assembled video from memory...', 'info');
-      const finalData = await ffmpeg.readFile('final.mp4');
+      let finalData = await ffmpeg.readFile('final.mp4');
+      const finalSizeMB = (finalData.length / 1024 / 1024).toFixed(2);
       setProgress(90);
-      addLog(`Final video size: ${(finalData.length / 1024 / 1024).toFixed(2)} MB`, 'info');
+      addLog(`Final compressed video size: ${finalSizeMB} MB`, 'info');
+      
+      // Check if still over limit and apply secondary compression if needed
+      if (finalData.length > 50 * 1024 * 1024) {
+        addLog(`⚠️ File still over 50MB (${finalSizeMB}MB), applying secondary compression...`, 'warning');
+        setMessage('Applying additional compression...');
+        await ffmpeg.exec([
+          '-i', 'final.mp4',
+          '-c:v', 'libx264',
+          '-preset', 'fast',
+          '-crf', '30',
+          '-c:a', 'aac',
+          '-b:a', '96k',
+          '-movflags', 'faststart',
+          '-y',
+          'final_compressed.mp4'
+        ]);
+        finalData = await ffmpeg.readFile('final_compressed.mp4');
+        const compressedSizeMB = (finalData.length / 1024 / 1024).toFixed(2);
+        addLog(`✓ Secondary compression complete: ${compressedSizeMB} MB`, 'success');
+      }
 
       // Step 6: Upload
       setStatus('uploading');
