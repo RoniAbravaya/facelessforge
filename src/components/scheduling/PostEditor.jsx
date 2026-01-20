@@ -99,11 +99,16 @@ function validatePost(post, platform) {
     errors.push('Video is required');
   }
 
+  // Title required
+  if (!post.title || post.title.trim() === '') {
+    errors.push('Title is required');
+  }
+
   // Scheduled time
-  if (!post.scheduled_at) {
+  if (!post.scheduled_for) {
     errors.push('Scheduled time is required');
   } else {
-    const scheduledTime = new Date(post.scheduled_at);
+    const scheduledTime = new Date(post.scheduled_for);
     if (scheduledTime <= new Date()) {
       errors.push('Scheduled time must be in the future');
     }
@@ -122,10 +127,11 @@ function validatePost(post, platform) {
 export default function PostEditor({ post, initialDate, completedProjects = [], onSave, onCancel }) {
   const [formData, setFormData] = useState({
     platform: 'tiktok',
+    title: '',
     caption: '',
     video_url: '',
     thumbnail_url: '',
-    scheduled_at: '',
+    scheduled_for: '',
     privacy_level: 'PUBLIC_TO_EVERYONE',
     project_id: '',
     ...post,
@@ -134,7 +140,7 @@ export default function PostEditor({ post, initialDate, completedProjects = [], 
   const [validation, setValidation] = useState({ errors: [], warnings: [], isValid: false, hashtags: [], charCount: 0, maxChars: 2200 });
   const [activeTab, setActiveTab] = useState('content');
 
-  // Initialize scheduled_at from initialDate
+  // Initialize scheduled_for from initialDate
   useEffect(() => {
     if (initialDate && !post) {
       const date = new Date(initialDate);
@@ -145,7 +151,7 @@ export default function PostEditor({ post, initialDate, completedProjects = [], 
       }
       setFormData(prev => ({
         ...prev,
-        scheduled_at: date.toISOString().slice(0, 16),
+        scheduled_for: date.toISOString().slice(0, 16),
       }));
     }
   }, [initialDate, post]);
@@ -165,7 +171,7 @@ export default function PostEditor({ post, initialDate, completedProjects = [], 
       const payload = {
         ...data,
         status: 'scheduled',
-        scheduled_at: new Date(data.scheduled_at).toISOString(),
+        scheduled_for: new Date(data.scheduled_for).toISOString(),
       };
 
       if (post?.id) {
@@ -197,6 +203,7 @@ export default function PostEditor({ post, initialDate, completedProjects = [], 
             ...prev,
             project_id: projectId,
             video_url: artifacts[0].file_url,
+            title: prev.title || project.title || project.topic,
             caption: prev.caption || project.tiktok_settings?.caption || project.topic,
           }));
           toast.success('Video loaded from project');
@@ -246,6 +253,18 @@ export default function PostEditor({ post, initialDate, completedProjects = [], 
         </TabsList>
 
         <TabsContent value="content" className="space-y-4 mt-4">
+          {/* Title */}
+          <div>
+            <Label htmlFor="title">Title *</Label>
+            <Input
+              id="title"
+              placeholder="Enter post title..."
+              value={formData.title}
+              onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+              className="mt-2"
+            />
+          </div>
+
           {/* Video Selection */}
           <div>
             <Label htmlFor="video">Video Source</Label>
@@ -341,12 +360,12 @@ export default function PostEditor({ post, initialDate, completedProjects = [], 
         <TabsContent value="schedule" className="space-y-4 mt-4">
           {/* Date/Time Picker */}
           <div>
-            <Label htmlFor="scheduled_at">Schedule Date & Time</Label>
+            <Label htmlFor="scheduled_for">Schedule Date & Time *</Label>
             <Input
-              id="scheduled_at"
+              id="scheduled_for"
               type="datetime-local"
-              value={formData.scheduled_at}
-              onChange={(e) => setFormData(prev => ({ ...prev, scheduled_at: e.target.value }))}
+              value={formData.scheduled_for}
+              onChange={(e) => setFormData(prev => ({ ...prev, scheduled_for: e.target.value }))}
               className="mt-2"
               min={new Date().toISOString().slice(0, 16)}
             />
@@ -382,7 +401,7 @@ export default function PostEditor({ post, initialDate, completedProjects = [], 
                     }
                     setFormData(prev => ({
                       ...prev,
-                      scheduled_at: date.toISOString().slice(0, 16),
+                      scheduled_for: date.toISOString().slice(0, 16),
                     }));
                   }}
                 >
@@ -402,11 +421,15 @@ export default function PostEditor({ post, initialDate, completedProjects = [], 
                 </Badge>
                 <span className="text-sm text-slate-500">
                   <Calendar className="w-3 h-3 inline mr-1" />
-                  {formData.scheduled_at 
-                    ? new Date(formData.scheduled_at).toLocaleString() 
+                  {formData.scheduled_for 
+                    ? new Date(formData.scheduled_for).toLocaleString() 
                     : 'Not scheduled'}
                 </span>
               </div>
+
+              {formData.title && (
+                <h3 className="font-semibold text-slate-900 mb-2">{formData.title}</h3>
+              )}
 
               {formData.video_url ? (
                 <div className="rounded-lg overflow-hidden bg-black mb-4">

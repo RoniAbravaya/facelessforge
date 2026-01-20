@@ -86,7 +86,7 @@ export default function ContentCalendar() {
     queryKey: ['scheduledPosts', currentDate.getFullYear(), currentDate.getMonth()],
     queryFn: async () => {
       // Fetch from ScheduledPost entity
-      const posts = await base44.entities.ScheduledPost.list('-scheduled_at', 100);
+      const posts = await base44.entities.ScheduledPost.list('-scheduled_for', 100);
       return posts;
     },
     refetchInterval: 30000, // Refetch every 30 seconds
@@ -141,7 +141,7 @@ export default function ContentCalendar() {
 
   // Get posts for a specific day
   const getPostsForDay = (date) => {
-    return filteredPosts.filter(post => isSameDay(post.scheduled_at, date));
+    return filteredPosts.filter(post => isSameDay(post.scheduled_for, date));
   };
 
   // Navigation
@@ -291,7 +291,7 @@ export default function ContentCalendar() {
                 hourEnd.setHours(hour + 1, 0, 0, 0);
                 
                 const hourPosts = filteredPosts.filter(post => {
-                  const postDate = new Date(post.scheduled_at);
+                  const postDate = new Date(post.scheduled_for);
                   return postDate >= hourStart && postDate < hourEnd;
                 });
 
@@ -329,7 +329,7 @@ export default function ContentCalendar() {
   // Render list view
   const renderListView = () => {
     const groupedPosts = (filteredPosts || []).reduce((acc, post) => {
-      const dateKey = new Date(post.scheduled_at).toDateString();
+      const dateKey = new Date(post.scheduled_for).toDateString();
       if (!acc[dateKey]) acc[dateKey] = [];
       acc[dateKey].push(post);
       return acc;
@@ -363,7 +363,7 @@ export default function ContentCalendar() {
               </h3>
               <div className="space-y-2">
                 {groupedPosts[dateKey]
-                  .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))
+                  .sort((a, b) => new Date(a.scheduled_for) - new Date(b.scheduled_for))
                   .map((post) => (
                     <PostCard 
                       key={post.id} 
@@ -537,7 +537,7 @@ function PostCard({ post, compact = false, onClick, onEdit, onDelete, onRetry })
         className={`text-xs p-1.5 rounded cursor-pointer truncate ${platform.color}`}
       >
         <span className="mr-1">{platform.icon}</span>
-        {formatDate(post.scheduled_at, 'time')}
+        {formatDate(post.scheduled_for, 'time')}
       </div>
     );
   }
@@ -565,7 +565,7 @@ function PostCard({ post, compact = false, onClick, onEdit, onDelete, onRetry })
               </Badge>
               <span className="text-sm text-slate-500 ml-auto">
                 <Clock className="w-3 h-3 inline mr-1" />
-                {formatDate(post.scheduled_at, 'time')}
+                {formatDate(post.scheduled_for, 'time')}
               </span>
             </div>
             
