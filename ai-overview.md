@@ -38,6 +38,15 @@ FacelessForge is a SaaS platform for automated AI-powered video content generati
 │   ├── components/             # React components
 │   │   ├── assembly/           # Video assembly components
 │   │   │   └── ClientAssembly.jsx  # Browser-based FFmpeg assembly
+│   │   ├── calendar/           # Content calendar components
+│   │   │   ├── CalendarMonthView.jsx
+│   │   │   ├── CalendarWeekView.jsx
+│   │   │   └── PostListView.jsx
+│   │   ├── post/               # Post management components
+│   │   │   ├── PostCard.jsx
+│   │   │   └── TikTokPreview.jsx
+│   │   ├── scheduling/         # Scheduling components
+│   │   │   └── PostEditor.jsx  # Post creation/editing
 │   │   ├── project/            # Project-related components
 │   │   │   ├── ArtifactList.jsx    # Display generated artifacts
 │   │   │   ├── JobTimeline.jsx     # Job progress timeline
@@ -49,6 +58,8 @@ FacelessForge is a SaaS platform for automated AI-powered video content generati
 │   │   ├── templates.js        # Video template definitions
 │   │   └── utils.js            # General utilities
 │   ├── pages/                  # Page components
+│   │   ├── ContentCalendar.jsx # Content scheduling calendar
+│   │   ├── CreatePost.jsx      # Create/schedule posts
 │   │   ├── CreateProject.jsx   # Project creation wizard
 │   │   ├── Dashboard.jsx       # Main dashboard
 │   │   ├── Integrations.jsx    # Provider configuration
@@ -58,9 +69,13 @@ FacelessForge is a SaaS platform for automated AI-powered video content generati
 │   ├── Layout.jsx              # Page layout with navigation
 │   └── main.jsx                # React entry point
 ├── functions/                  # Backend serverless functions
+│   ├── publishers/             # Social media publishers
+│   │   ├── types.ts            # Publisher interface types
+│   │   └── tiktokPublisher.ts  # TikTok publisher implementation
 │   ├── utils/                  # Shared utilities
 │   │   ├── logger.ts           # Centralized logging utility
 │   │   └── usage.ts            # Usage tracking for billing
+│   ├── processScheduledPosts.ts # Queue worker for publishing
 │   ├── startVideoGeneration.ts # Main generation orchestrator
 │   ├── generateScript.ts       # OpenAI script generation
 │   ├── generateScenePlan.ts    # Scene breakdown planning
@@ -220,3 +235,106 @@ Each template includes:
 - All functions verify user authentication
 - CORS configured for frontend domain only
 - Webhook endpoints validate payload signatures
+
+---
+
+## Module 1: Content Calendar & Scheduler
+
+### Overview
+Content scheduling system with calendar views, post management, and reliable publishing queue.
+
+### New Entities (Required in Base44)
+
+#### ScheduledPost
+```
+- id, user_id
+- platform: 'tiktok' | 'instagram' | 'youtube' | 'twitter'
+- status: 'draft' | 'scheduled' | 'publishing' | 'published' | 'failed'
+- caption, hashtags
+- video_url, thumbnail_url
+- scheduled_at, published_at
+- privacy_level
+- platform_post_id, platform_url
+- project_id (optional - links to generated video)
+- error_message, error_code
+- retry_count, max_retries
+- metadata (JSON)
+```
+
+#### PublishAuditLog
+```
+- id, post_id
+- action: 'created' | 'scheduled' | 'published' | 'failed' | 'retried'
+- actor_email, actor_type: 'user' | 'system' | 'webhook'
+- timestamp
+- metadata (JSON)
+```
+
+#### InsightJob (for Module 3 preparation)
+```
+- id, scheduled_post_id
+- platform, platform_post_id
+- status: 'pending' | 'completed' | 'failed'
+- scheduled_at
+- fetch_intervals: ['1h', '24h', '72h']
+```
+
+### Publisher Provider Interface
+
+Located in `functions/publishers/`:
+
+```typescript
+// types.ts - Interface definition
+interface Publisher {
+  platform: Platform;
+  config: PlatformConfig;
+  validate(request: PublishRequest): { valid: boolean; errors: string[] };
+  publish(request: PublishRequest): Promise<PublishResult>;
+  validateToken(accessToken: string): Promise<boolean>;
+  refreshToken?(refreshToken: string): Promise<TokenResponse>;
+}
+
+// tiktokPublisher.ts - TikTok implementation
+// Future: instagramPublisher.ts, youtubePublisher.ts, twitterPublisher.ts
+```
+
+### Queue Worker
+
+`processScheduledPosts.ts` should be triggered by cron every minute:
+1. Fetches posts where `status = 'scheduled'` AND `scheduled_at <= NOW()`
+2. Fetches failed posts ready for retry
+3. Processes each post through the publisher
+4. Updates status and creates audit logs
+5. Seeds insights job for successful publishes
+
+### UI Components
+
+- **ContentCalendar.jsx** - Month/Week/List views with stats
+- **CreatePost.jsx** - Post editor with video selection
+- **CalendarMonthView.jsx** - Month grid with post cards
+- **CalendarWeekView.jsx** - Week timeline view
+- **PostListView.jsx** - List view for posts
+- **TikTokPreview.jsx** - Platform-specific preview
+
+### Cron Jobs Required
+
+1. **processScheduledPosts** - Every minute
+   - Processes due posts
+   - Retries failed posts
+
+2. **collectInsights** (Module 3) - Every hour
+   - Fetches metrics for published posts
+
+### Environment Variables
+
+```
+TIKTOK_CLIENT_KEY=xxx
+TIKTOK_CLIENT_SECRET=xxx
+BASE44_APP_ID=xxx
+BASE44_API_KEY=xxx (service role key)
+```
+
+### Success Metrics
+- ≥99% publishing success rate
+- Queue processing SLA < 60 seconds
+- All publish events logged in audit trail
