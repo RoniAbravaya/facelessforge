@@ -166,16 +166,13 @@ export default function AdminPanel() {
   // Invite user mutation
   const inviteUserMutation = useMutation({
     mutationFn: async (data) => {
-      return await base44.entities.User.create({
-        ...data,
-        status: 'pending',
-        invited_at: new Date().toISOString()
-      });
+      // Use the proper user invitation API
+      return await base44.users.inviteUser(data.email, data.role || 'user');
     },
     onSuccess: () => {
       queryClient.invalidateQueries(['adminUsers']);
       setIsInviteDialogOpen(false);
-      toast.success('User invited successfully');
+      toast.success('User invitation sent successfully');
     },
     onError: (error) => {
       toast.error(`Failed to invite user: ${error.message}`);

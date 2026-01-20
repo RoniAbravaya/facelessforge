@@ -42,7 +42,15 @@ export default function TikTokAnalytics() {
                 <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
                 <div>
                   <p className="text-sm font-medium text-red-900">Failed to load TikTok analytics</p>
-                  <p className="text-sm text-red-700 mt-1">{error.message}</p>
+                  <p className="text-sm text-red-700 mt-1">
+                    {error?.response?.data?.error || error.message || 'Unknown error'}
+                  </p>
+                  {error?.response?.data?.details && (
+                    <details className="mt-2 text-xs text-red-600">
+                      <summary className="cursor-pointer">Error details</summary>
+                      <pre className="mt-1 whitespace-pre-wrap">{error.response.data.details}</pre>
+                    </details>
+                  )}
                 </div>
               </div>
             </CardContent>
