@@ -44,7 +44,7 @@ export default function PostCard({ post, compact = false, onDelete }) {
           <div className="flex items-start justify-between mb-2">
             <div>
               <h4 className="font-semibold text-slate-900">{post.title}</h4>
-              <p className="text-sm text-slate-600 truncate">{post.caption.substring(0, 60)}...</p>
+              <p className="text-sm text-slate-600 truncate">{(post.caption || '').substring(0, 60)}...</p>
             </div>
             <Badge className={config.color}>
               <Icon className={`w-3 h-3 mr-1 ${config.spin ? 'animate-spin' : ''}`} />
