@@ -161,7 +161,7 @@ export default function CreatePost() {
                   rows={4}
                   maxLength={2200}
                 />
-                <p className="text-xs text-slate-500 mt-1">{formData.caption.length}/2200</p>
+                <p className="text-xs text-slate-500 mt-1">{(formData.caption || '').length}/2200</p>
               </div>
 
               <div>
