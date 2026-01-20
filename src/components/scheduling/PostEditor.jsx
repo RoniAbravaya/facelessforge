@@ -80,7 +80,7 @@ function validatePost(post, platform) {
 
   if (!config) {
     errors.push('Invalid platform selected');
-    return { errors, warnings, isValid: false };
+    return { errors, warnings, isValid: false, hashtags: [], charCount: 0, maxChars: 2200 };
   }
 
   // Caption length
@@ -131,7 +131,7 @@ export default function PostEditor({ post, initialDate, completedProjects = [], 
     ...post,
   });
 
-  const [validation, setValidation] = useState({ errors: [], warnings: [], isValid: false });
+  const [validation, setValidation] = useState({ errors: [], warnings: [], isValid: false, hashtags: [], charCount: 0, maxChars: 2200 });
   const [activeTab, setActiveTab] = useState('content');
 
   // Initialize scheduled_at from initialDate
@@ -156,8 +156,8 @@ export default function PostEditor({ post, initialDate, completedProjects = [], 
     setValidation(result);
   }, [formData]);
 
-  // Get config for current platform
-  const platformConfig = PLATFORM_CONFIG[formData.platform];
+  // Get config for current platform (fallback to tiktok if invalid)
+  const platformConfig = PLATFORM_CONFIG[formData.platform] || PLATFORM_CONFIG.tiktok;
 
   // Save mutation
   const saveMutation = useMutation({
@@ -290,9 +290,9 @@ export default function PostEditor({ post, initialDate, completedProjects = [], 
             <div className="flex items-center justify-between mb-2">
               <Label htmlFor="caption">Caption</Label>
               <span className={`text-xs ${
-                validation.charCount > platformConfig.maxCaption ? 'text-red-600' : 'text-slate-500'
+                (validation.charCount || 0) > platformConfig.maxCaption ? 'text-red-600' : 'text-slate-500'
               }`}>
-                {validation.charCount}/{platformConfig.maxCaption}
+                {validation.charCount || 0}/{platformConfig.maxCaption}
               </span>
             </div>
             <Textarea
@@ -303,7 +303,7 @@ export default function PostEditor({ post, initialDate, completedProjects = [], 
               className="min-h-[120px]"
               maxLength={platformConfig.maxCaption + 100} // Allow slight overflow for editing
             />
-            {validation.hashtags.length > 0 && (
+            {validation.hashtags?.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1">
                 {validation.hashtags.slice(0, 10).map((tag, i) => (
                   <Badge key={i} variant="outline" className="text-xs">
@@ -427,15 +427,15 @@ export default function PostEditor({ post, initialDate, completedProjects = [], 
       </Tabs>
 
       {/* Validation Messages */}
-      {(validation.errors.length > 0 || validation.warnings.length > 0) && (
+      {(validation.errors?.length > 0 || validation.warnings?.length > 0) && (
         <div className="space-y-2">
-          {validation.errors.map((error, i) => (
+          {validation.errors?.map((error, i) => (
             <div key={i} className="flex items-center gap-2 text-sm text-red-600">
               <AlertCircle className="w-4 h-4" />
               {error}
             </div>
           ))}
-          {validation.warnings.map((warning, i) => (
+          {validation.warnings?.map((warning, i) => (
             <div key={i} className="flex items-center gap-2 text-sm text-amber-600">
               <AlertCircle className="w-4 h-4" />
               {warning}
