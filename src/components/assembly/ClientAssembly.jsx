@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import { toBlobURL } from '@ffmpeg/util';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';

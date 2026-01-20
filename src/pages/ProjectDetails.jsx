@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   ArrowLeft, Download, PlayCircle, Loader2, CheckCircle2,
-  XCircle, Clock, FileText, Mic, Video, Clapperboard, AlertCircle, RefreshCw
+  XCircle, Clock, AlertCircle, RefreshCw
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '../utils';

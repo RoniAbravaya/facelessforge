@@ -75,10 +75,61 @@ Deno.serve(async (req) => {
       }
 
       case 'video_veo': {
-        return Response.json({ 
-          success: true, 
-          message: 'Google Veo API key saved (connection test requires project ID configuration)' 
-        });
+        // Test Veo by checking if the API key has proper permissions
+        const veoResponse = await fetch(
+          'https://generativelanguage.googleapis.com/v1beta/models?key=' + apiKey
+        );
+        
+        if (veoResponse.ok) {
+          return Response.json({ 
+            success: true, 
+            message: 'Google Veo API connection successful' 
+          });
+        } else {
+          const errorData = await veoResponse.json().catch(() => ({}));
+          return Response.json({ 
+            success: false, 
+            error: errorData.error?.message || 'Invalid API key or Generative Language API not enabled'
+          });
+        }
+      }
+
+      case 'gemini_api': {
+        // Test Gemini API key by listing models
+        const geminiResponse = await fetch(
+          'https://generativelanguage.googleapis.com/v1beta/models?key=' + apiKey
+        );
+        
+        if (geminiResponse.ok) {
+          const data = await geminiResponse.json();
+          const modelCount = data.models?.length || 0;
+          return Response.json({ 
+            success: true, 
+            message: `Gemini API connection successful (${modelCount} models available)` 
+          });
+        } else {
+          const errorData = await geminiResponse.json().catch(() => ({}));
+          const errorMessage = errorData.error?.message || 'Invalid API key';
+          
+          if (errorMessage.includes('API_KEY_INVALID')) {
+            return Response.json({ 
+              success: false, 
+              error: 'Invalid Gemini API key. Please check your key and try again.'
+            });
+          }
+          
+          if (errorMessage.includes('SERVICE_DISABLED') || errorMessage.includes('not enabled')) {
+            return Response.json({ 
+              success: false, 
+              error: 'Generative Language API is not enabled for this project. Enable it at: https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com'
+            });
+          }
+          
+          return Response.json({ 
+            success: false, 
+            error: errorMessage
+          });
+        }
       }
 
       case 'assembly_shotstack': {

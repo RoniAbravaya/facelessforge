@@ -7,13 +7,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, ArrowRight, Sparkles, Loader2, Video as VideoIcon, Calendar, Wand2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Sparkles, Loader2, Video as VideoIcon, Calendar, Wand2, Layout } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import SuggestionField from '../components/project/SuggestionField';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '../utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { getAllTemplates, getTemplate, applyTemplateDefaults, getRandomTopicSuggestion } from '../lib/templates';
 
 export default function CreateProject() {
   const navigate = useNavigate();
@@ -38,6 +39,8 @@ export default function CreateProject() {
   const [suggestions, setSuggestions] = useState(null);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [previousSuggestions, setPreviousSuggestions] = useState([]);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const templates = getAllTemplates();
 
   const { data: integrations = [] } = useQuery({
     queryKey: ['integrations'],
@@ -51,11 +54,23 @@ export default function CreateProject() {
   const assemblyProviders = activeIntegrations.filter(i => i.provider_type.startsWith('assembly_'));
 
   const [selectedProviders, setSelectedProviders] = useState({
-    llm: llmProviders[0]?.id || '',
-    voice: voiceProviders[0]?.id || '',
-    video: videoProviders[0]?.id || '',
-    assembly: assemblyProviders[0]?.id || ''
+    llm: '',
+    voice: '',
+    video: '',
+    assembly: ''
   });
+
+  // Initialize selected providers when integrations are loaded
+  React.useEffect(() => {
+    if (integrations.length > 0) {
+      setSelectedProviders(prev => ({
+        llm: prev.llm || llmProviders[0]?.id || '',
+        voice: prev.voice || voiceProviders[0]?.id || '',
+        video: prev.video || videoProviders[0]?.id || '',
+        assembly: prev.assembly || assemblyProviders[0]?.id || ''
+      }));
+    }
+  }, [integrations, llmProviders, voiceProviders, videoProviders, assemblyProviders]);
 
   const fetchSuggestions = async () => {
     setLoadingSuggestions(true);
@@ -76,6 +91,20 @@ export default function CreateProject() {
     } finally {
       setLoadingSuggestions(false);
     }
+  };
+
+  const applyTemplate = (templateId) => {
+    const template = getTemplate(templateId);
+    if (!template) return;
+    
+    setSelectedTemplate(templateId);
+    setFormData(prev => ({
+      ...prev,
+      ...applyTemplateDefaults(templateId, prev),
+      topic: prev.topic || getRandomTopicSuggestion(templateId) || '',
+    }));
+    
+    toast.success(`Applied "${template.name}" template`);
   };
 
   const createProject = useMutation({
@@ -194,6 +223,36 @@ export default function CreateProject() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-6 space-y-6">
+                  {/* Template Selection */}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Layout className="w-5 h-5 text-slate-600" />
+                      <Label className="text-base font-medium">Start with a Template (Optional)</Label>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                      {templates.slice(0, 8).map((template) => (
+                        <button
+                          key={template.id}
+                          type="button"
+                          onClick={() => applyTemplate(template.id)}
+                          className={`p-3 rounded-lg border-2 text-left transition-all hover:border-slate-400 hover:bg-slate-50 ${
+                            selectedTemplate === template.id 
+                              ? 'border-slate-900 bg-slate-50' 
+                              : 'border-slate-200'
+                          }`}
+                        >
+                          <div className="text-lg mb-1">{template.icon}</div>
+                          <div className="text-xs font-medium text-slate-900 truncate">{template.name}</div>
+                        </button>
+                      ))}
+                    </div>
+                    {selectedTemplate && (
+                      <p className="text-xs text-slate-600">
+                        Template applied: {getTemplate(selectedTemplate)?.description}
+                      </p>
+                    )}
+                  </div>
+
                   {/* AI Suggestions Button */}
                   <div className="bg-gradient-to-r from-purple-50 to-blue-50 border-2 border-purple-200 rounded-lg p-4">
                     <div className="flex items-center justify-between">

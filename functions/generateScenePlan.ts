@@ -1,15 +1,31 @@
+/**
+ * Generate video scene plan from script using OpenAI GPT-4o-mini.
+ * Breaks script into visual scenes with prompts for AI video generation.
+ */
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
+import { createRequestLogger, getUserFriendlyError, ErrorMessages } from './utils/logger.ts';
 
 Deno.serve(async (req) => {
+  const logger = createRequestLogger(req, 'generateScenePlan');
+  
   try {
     const { apiKey, script, duration, style } = await req.json();
 
-    console.log('Generating scene plan...');
-    console.log(`Script length: ${script?.length || 0} chars`);
-    console.log(`Duration: ${duration}s, Style: ${style}`);
+    // Input validation
+    if (!apiKey) {
+      logger.error('Missing API key');
+      return Response.json({ error: ErrorMessages.MISSING_REQUIRED_FIELD('apiKey') }, { status: 400 });
+    }
+
+    logger.info('Starting scene planning', { 
+      scriptLength: script?.length || 0, 
+      duration, 
+      style: style?.substring(0, 30) 
+    });
 
     if (!script || script.trim().length === 0) {
-      throw new Error('Script is empty or undefined');
+      logger.error('Script is empty or undefined');
+      throw new Error(ErrorMessages.MISSING_REQUIRED_FIELD('script'));
     }
 
     const prompt = `You are a video production planner. Analyze this script and create a scene breakdown for video generation.
@@ -60,47 +76,64 @@ Example:
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`OpenAI API error (${response.status}):`, errorText);
+      logger.error('OpenAI API error', null, { status: response.status, error: errorText });
+      
       try {
-        const error = JSON.parse(errorText);
-        throw new Error(`OpenAI API error: ${error.error?.message || errorText}`);
-      } catch {
+        const errorData = JSON.parse(errorText);
+        const message = errorData.error?.message || errorText;
+        
+        if (response.status === 401) {
+          throw new Error(ErrorMessages.INVALID_API_KEY);
+        }
+        if (response.status === 429) {
+          throw new Error(ErrorMessages.RATE_LIMITED);
+        }
+        
+        throw new Error(`OpenAI error: ${message}`);
+      } catch (parseError) {
+        if (parseError instanceof Error && parseError.message.includes('OpenAI')) {
+          throw parseError;
+        }
         throw new Error(`OpenAI API error (${response.status}): ${errorText}`);
       }
     }
 
     const data = await response.json();
-    console.log('OpenAI response received');
+    logger.info('OpenAI response received', { tokensUsed: data.usage?.total_tokens });
     
     let result;
     try {
       result = JSON.parse(data.choices[0].message.content);
     } catch (parseError) {
-      console.error('Failed to parse OpenAI response:', data.choices[0].message.content);
-      throw new Error('Invalid JSON response from OpenAI');
+      logger.error('Failed to parse OpenAI response', parseError, { 
+        response: data.choices[0].message.content.substring(0, 200) 
+      });
+      throw new Error(ErrorMessages.SCENE_PLANNING_FAILED);
     }
     
     // Extract scenes array if wrapped in object
     let scenes = Array.isArray(result) ? result : result.scenes;
     
     if (!scenes || !Array.isArray(scenes) || scenes.length === 0) {
-      console.error('Invalid scenes data:', result);
-      throw new Error('No valid scenes generated');
+      logger.error('Invalid scenes data', null, { result });
+      throw new Error(ErrorMessages.SCENE_PLANNING_FAILED);
     }
 
-    console.log(`Generated ${scenes.length} scenes`);
+    logger.info('Scenes parsed', { sceneCount: scenes.length });
 
     // Validate scene structure
     scenes.forEach((scene, idx) => {
       if (!scene.duration || !scene.prompt) {
-        console.error(`Scene ${idx} missing required fields:`, scene);
-        throw new Error(`Scene ${idx} is missing duration or prompt`);
+        logger.warn(`Scene ${idx} missing required fields`, { scene });
+        // Fill in defaults instead of throwing
+        scene.duration = scene.duration || 5;
+        scene.prompt = scene.prompt || `Visual scene ${idx + 1} for the video`;
       }
     });
 
     // Validate and adjust durations to fit 4-8 second range for video generation APIs
     let totalDuration = scenes.reduce((sum, s) => sum + (s.duration || 0), 0);
-    console.log(`Total scene duration: ${totalDuration}s (target: ${duration}s)`);
+    logger.info('Duration calculation', { totalDuration, targetDuration: duration });
     
     // Clamp each scene to 4-8 seconds and recalculate total
     scenes.forEach(s => {
@@ -108,7 +141,7 @@ Example:
     });
     
     totalDuration = scenes.reduce((sum, s) => sum + (s.duration || 0), 0);
-    console.log(`After clamping to 4-8s range: ${totalDuration}s`);
+    logger.info('After clamping', { totalDuration, clampedTo: '4-8s per scene' });
     
     // If total doesn't match target duration, adjust scenes proportionally
     if (Math.abs(totalDuration - duration) > 2) {
@@ -116,14 +149,33 @@ Example:
       scenes.forEach(s => {
         s.duration = Math.max(4, Math.min(8, Math.round(s.duration * ratio)));
       });
-      console.log('Adjusted scene durations while maintaining 4-8s bounds');
+      const adjustedTotal = scenes.reduce((sum, s) => sum + s.duration, 0);
+      logger.info('Adjusted scene durations', { ratio, adjustedTotal });
     }
 
-    return Response.json({ scenes });
+    const finalTotal = scenes.reduce((sum, s) => sum + s.duration, 0);
+    logger.info('Scene plan complete', { 
+      sceneCount: scenes.length, 
+      totalDuration: finalTotal,
+      tokensUsed: data.usage?.total_tokens 
+    });
+
+    return Response.json({ 
+      scenes,
+      metadata: {
+        sceneCount: scenes.length,
+        totalDuration: finalTotal,
+        tokensUsed: data.usage?.total_tokens
+      }
+    });
 
   } catch (error) {
-    console.error('Generate scene plan error:', error);
-    console.error('Error stack:', error.stack);
-    return Response.json({ error: error.message }, { status: 500 });
+    logger.error('Scene planning failed', error);
+    
+    const userMessage = getUserFriendlyError(error, 'Scene planning');
+    return Response.json({ 
+      error: userMessage,
+      details: error instanceof Error ? error.message : String(error)
+    }, { status: 500 });
   }
 });

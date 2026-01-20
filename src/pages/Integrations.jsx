@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { 
-  Brain, Mic, Video, Clapperboard, CheckCircle2, XCircle, 
+  Brain, Mic, Video, Clapperboard, CheckCircle2, 
   Loader2, Settings, ArrowLeft, TestTube2 
 } from 'lucide-react';
 import { Link } from 'react-router-dom';

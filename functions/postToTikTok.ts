@@ -1,15 +1,45 @@
+/**
+ * Post video to TikTok using TikTok's Direct Post API.
+ * Supports direct posting, draft saving, and scheduled posts.
+ */
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.6';
+import { createRequestLogger, getUserFriendlyError } from './utils/logger.ts';
 
 Deno.serve(async (req) => {
+  const logger = createRequestLogger(req, 'postToTikTok');
   const base44 = createClientFromRequest(req);
+  
+  // Parse request body once at the start
+  let requestBody: {
+    videoUrl?: string;
+    caption?: string;
+    privacyLevel?: string;
+    isDraft?: boolean;
+    projectId?: string;
+  } = {};
+  
+  try {
+    requestBody = await req.json();
+  } catch (parseError) {
+    logger.error('Failed to parse request body', parseError);
+    return Response.json({ error: 'Invalid request body' }, { status: 400 });
+  }
+  
+  const { videoUrl, caption, privacyLevel, isDraft, projectId } = requestBody;
   
   try {
     const user = await base44.auth.me();
     if (!user) {
+      logger.warn('Unauthorized access attempt');
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { videoUrl, caption, privacyLevel, isDraft, projectId } = await req.json();
+    logger.info('Starting TikTok post', { 
+      projectId, 
+      isDraft, 
+      privacyLevel,
+      hasCaption: !!caption 
+    });
 
     if (!videoUrl) {
       throw new Error('Video URL is required');
@@ -19,17 +49,18 @@ Deno.serve(async (req) => {
     const accessToken = await base44.asServiceRole.connectors.getAccessToken('tiktok');
 
     // Download video file
-    console.log('[TikTok] Downloading video from:', videoUrl);
+    logger.info('Downloading video', { url: videoUrl?.substring(0, 50) });
     const videoResponse = await fetch(videoUrl);
     if (!videoResponse.ok) {
-      throw new Error(`Failed to download video: ${videoResponse.status}`);
+      throw new Error(`Failed to download video: ${videoResponse.status} ${videoResponse.statusText}`);
     }
     const videoBytes = new Uint8Array(await videoResponse.arrayBuffer());
-    console.log(`[TikTok] Downloaded ${(videoBytes.length / 1024 / 1024).toFixed(2)} MB`);
+    const sizeMB = (videoBytes.length / 1024 / 1024).toFixed(2);
+    logger.info('Video downloaded', { sizeMB, bytes: videoBytes.length });
 
     if (isDraft) {
       // Upload as draft using Direct Post API (with auto_add_music: false)
-      console.log('[TikTok] Uploading as draft...');
+      logger.info('Uploading as draft');
       
       const initResponse = await fetch('https://open.tiktokapis.com/v2/post/publish/inbox/video/init/', {
         method: 'POST',
@@ -56,7 +87,7 @@ Deno.serve(async (req) => {
       const { publish_id, upload_url } = initData.data;
 
       // Upload video file
-      console.log('[TikTok] Uploading video chunks...');
+      logger.info('Uploading video chunks');
       const uploadResponse = await fetch(upload_url, {
         method: 'PUT',
         headers: {
@@ -72,7 +103,7 @@ Deno.serve(async (req) => {
         throw new Error(`TikTok upload failed (${uploadResponse.status}): ${errorText}`);
       }
 
-      console.log('[TikTok] Video uploaded, saving as draft...');
+      logger.info('Video uploaded, saving as draft');
 
       // Publish to inbox (draft)
       const publishResponse = await fetch('https://open.tiktokapis.com/v2/post/publish/video/init/', {
@@ -123,7 +154,7 @@ Deno.serve(async (req) => {
 
     } else {
       // Direct post using Direct Post API
-      console.log('[TikTok] Posting directly to profile...');
+      logger.info('Posting directly to profile');
 
       const publishResponse = await fetch('https://open.tiktokapis.com/v2/post/publish/video/init/', {
         method: 'POST',
@@ -157,7 +188,7 @@ Deno.serve(async (req) => {
       const publishData = await publishResponse.json();
       const publishId = publishData.data?.publish_id;
 
-      console.log('[TikTok] Video published successfully, ID:', publishId);
+      logger.info('Video published successfully', { publishId });
 
       // Update project
       if (projectId) {
@@ -176,22 +207,24 @@ Deno.serve(async (req) => {
     }
 
   } catch (error) {
-    console.error('[TikTok] Post error:', error);
+    logger.error('TikTok post failed', error, { projectId });
     
-    // Update project with error
-    try {
-      const { projectId } = await req.json();
-      if (projectId) {
+    // Update project with error - use already parsed requestBody
+    if (projectId) {
+      try {
         await base44.asServiceRole.entities.Project.update(projectId, {
           'tiktok_settings.post_status': 'failed',
-          'tiktok_settings.error': error.message
+          'tiktok_settings.error': getUserFriendlyError(error, 'TikTok posting')
         });
+      } catch (updateError) {
+        logger.error('Failed to update project with error status', updateError);
       }
-    } catch {}
+    }
 
+    const userMessage = getUserFriendlyError(error, 'TikTok posting');
     return Response.json({ 
-      error: error.message,
-      details: error.stack 
+      error: userMessage,
+      details: error instanceof Error ? error.message : String(error)
     }, { status: 500 });
   }
 });
