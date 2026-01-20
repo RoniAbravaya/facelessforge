@@ -435,20 +435,21 @@ async function generateVideo(base44, project, jobId, resumeFromStep = null) {
         );
 
         try {
-          const clipResult = await base44.asServiceRole.functions.invoke('generateVideoClip', {
-            apiKey: videoIntegration.api_key,
-            providerType: videoIntegration.provider_type,
-            prompt: scene.prompt,
-            duration: clampedDuration,
-            aspectRatio: project.aspect_ratio,
-            geminiApiKey: geminiIntegration?.api_key,
-            jobId,
-            projectId,
-            sceneIndex: i
-          });
+          let clipResult;
 
-          // For Luma callback mode, we won't get videoUrl immediately
+          // Call provider-specific function
           if (videoIntegration.provider_type === 'video_luma') {
+            clipResult = await base44.asServiceRole.functions.invoke('generateLumaClip', {
+              apiKey: videoIntegration.api_key,
+              prompt: scene.prompt,
+              duration: clampedDuration,
+              aspectRatio: project.aspect_ratio,
+              jobId,
+              projectId,
+              sceneIndex: i
+            });
+
+            // Luma uses callback mode - generation ID returned
             if (clipResult.data.generationId) {
               const genId = clipResult.data.generationId;
               console.log(`[Clip ${i + 1}] Luma generation initiated: ${genId}`);
@@ -462,8 +463,30 @@ async function generateVideo(base44, project, jobId, resumeFromStep = null) {
             } else {
               throw new Error(`No generation ID returned for Luma clip ${i + 1}`);
             }
+
+          } else if (videoIntegration.provider_type === 'video_runway') {
+            clipResult = await base44.asServiceRole.functions.invoke('generateRunwayClip', {
+              apiKey: videoIntegration.api_key,
+              prompt: scene.prompt,
+              duration: clampedDuration,
+              aspectRatio: project.aspect_ratio,
+              jobId
+            });
+
+          } else if (videoIntegration.provider_type === 'video_veo') {
+            clipResult = await base44.asServiceRole.functions.invoke('generateVeoClip', {
+              apiKey: videoIntegration.api_key,
+              geminiApiKey: geminiIntegration?.api_key,
+              prompt: scene.prompt,
+              duration: clampedDuration,
+              aspectRatio: project.aspect_ratio,
+              jobId
+            });
+
+          } else {
+            throw new Error(`Unsupported video provider: ${videoIntegration.provider_type}`);
           }
-          
+
           if (!clipResult.data.videoUrl) {
             throw new Error(`No video URL returned for clip ${i + 1}`);
           }
@@ -484,7 +507,11 @@ async function generateVideo(base44, project, jobId, resumeFromStep = null) {
             file_url: clipResult.data.videoUrl,
             scene_index: i,
             duration: scene.duration,
-            metadata: { prompt: scene.prompt, generationTimeSeconds: clipDuration }
+            metadata: { 
+              prompt: scene.prompt, 
+              generationTimeSeconds: clipDuration,
+              provider: videoIntegration.provider_type
+            }
           });
 
           await logEvent(base44, jobId, 'video_clip_generation', 'step_progress', 
