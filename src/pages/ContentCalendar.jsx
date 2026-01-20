@@ -132,7 +132,7 @@ export default function ContentCalendar() {
 
   // Filter posts
   const filteredPosts = useMemo(() => {
-    return scheduledPosts.filter(post => {
+    return (scheduledPosts || []).filter(post => {
       if (platformFilter !== 'all' && post.platform !== platformFilter) return false;
       if (statusFilter !== 'all' && post.status !== statusFilter) return false;
       return true;
@@ -328,7 +328,7 @@ export default function ContentCalendar() {
 
   // Render list view
   const renderListView = () => {
-    const groupedPosts = filteredPosts.reduce((acc, post) => {
+    const groupedPosts = (filteredPosts || []).reduce((acc, post) => {
       const dateKey = new Date(post.scheduled_at).toDateString();
       if (!acc[dateKey]) acc[dateKey] = [];
       acc[dateKey].push(post);
