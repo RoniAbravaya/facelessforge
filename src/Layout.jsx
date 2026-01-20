@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from './utils';
-import { Video, Settings, Home, LogOut, Calendar, BarChart3 } from 'lucide-react';
+import { Video, Settings, Home, LogOut, Calendar, BarChart3, Shield } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { useQuery } from '@tanstack/react-query';
@@ -19,7 +19,8 @@ export default function Layout({ children, currentPageName }) {
   const navItems = [
     { name: 'Dashboard', icon: Home, page: 'Dashboard' },
     { name: 'Content Calendar', icon: Calendar, page: 'ContentCalendar' },
-    { name: 'Analytics', icon: BarChart3, page: 'TikTokAnalytics' },
+    { name: 'Analytics', icon: BarChart3, page: 'AnalyticsDashboard' },
+    { name: 'Admin', icon: Shield, page: 'AdminPanel' },
     { name: 'Integrations', icon: Settings, page: 'Integrations' }
   ];
 

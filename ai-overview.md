@@ -338,3 +338,156 @@ BASE44_API_KEY=xxx (service role key)
 - ≥99% publishing success rate
 - Queue processing SLA < 60 seconds
 - All publish events logged in audit trail
+
+---
+
+## Module 2: Admin Panel & User Management
+
+### Overview
+Administrative dashboard with RBAC, user management, queue monitoring, audit logs, and tenant settings.
+
+### New Entities (Required in Base44)
+
+#### User (Extended)
+```
+- id, email, name
+- role: 'superadmin' | 'admin' | 'editor' | 'author'
+- status: 'active' | 'suspended' | 'pending'
+- invited_at, created_date
+- permissions (JSON)
+```
+
+#### TenantSettings
+```
+- id, tenant_id
+- publishing_enabled: boolean
+- max_posts_per_day: number
+- default_privacy: string
+- timezone: string
+- webhook_url: string
+- branding (JSON)
+```
+
+### RBAC Roles & Permissions
+
+| Role | Permissions |
+|------|-------------|
+| superadmin | Full system access across all tenants |
+| admin | manage_users, manage_posts, view_analytics, manage_settings |
+| editor | manage_posts, view_analytics |
+| author | create_posts, view_own_analytics |
+
+### UI Components
+
+- **AdminPanel.jsx** - Main admin dashboard with tabs:
+  - Users tab: User listing, invite, edit roles, suspend
+  - Queue Monitor tab: View/retry publish jobs
+  - Audit Logs tab: Filterable activity log with pagination
+  - Settings tab: Tenant configuration form
+
+### Features
+1. **User Management**: Invite users via email, assign roles, suspend/activate
+2. **Queue Monitoring**: Real-time view of publish jobs, manual retry for failed jobs
+3. **Audit Logging**: Track all publish events with actor, timestamp, metadata
+4. **Tenant Settings**: Enable/disable publishing, set limits, configure webhooks
+
+### Success Metrics
+- Average incident resolution <10 minutes
+- 100% logging of critical events
+- Role changes audit-trailed
+
+---
+
+## Module 3: Social Media Analytics & Feedback Loop
+
+### Overview
+Comprehensive analytics dashboard with performance tracking, AI-powered content analysis, and actionable recommendations.
+
+### New Entities (Required in Base44)
+
+#### PostInsight
+```
+- id, post_id
+- platform, platform_post_id
+- snapshot_at: timestamp
+- interval_hours: 1 | 24 | 72
+- views, likes, comments, shares, saves
+- watch_time_avg, completion_rate
+- reach, impressions
+- raw_data (JSON)
+```
+
+#### ContentRecommendation
+```
+- id, created_date
+- title, description
+- category: 'timing' | 'content' | 'hashtags' | 'engagement' | 'format' | 'hook'
+- priority: 'high' | 'medium' | 'low'
+- action: string
+- confidence: number
+- based_on (JSON array)
+```
+
+### Backend Functions
+
+#### fetchPostInsights.ts
+- Fetches metrics from platform APIs (TikTok, Instagram, YouTube)
+- Normalizes data to unified schema
+- Handles token refresh for expired credentials
+
+#### collectInsights.ts (Cron Worker)
+- Runs hourly to process InsightJob queue
+- Fetches metrics at T+1h, T+24h, T+72h intervals
+- Seeds insight jobs for newly published posts
+- Updates job status and handles failures
+
+#### analyzeContent.ts
+- AI-powered content analysis using OpenAI
+- Extracts content features (caption length, hashtags, timing)
+- Generates personalized recommendations
+- Fallback to rule-based recommendations if no API key
+
+### UI Components
+
+- **AnalyticsDashboard.jsx** - Main analytics page with tabs:
+  - Overview: KPI cards, engagement breakdown, platform stats
+  - Post Analysis: Top/bottom performers with metrics
+  - AI Insights: AI recommendations, quick insights
+  - A/B Compare: Side-by-side post comparison
+
+### KPIs Tracked
+- Total views, engagement rate, watch time, completion rate
+- Likes, comments, shares, saves breakdown
+- Platform-specific performance
+- Posting time optimization
+
+### AI Recommendation Categories
+1. **Timing**: Optimal posting schedule based on performance
+2. **Content**: Caption and topic improvements
+3. **Hashtags**: Tag optimization strategies
+4. **Engagement**: CTAs and interaction boosters
+5. **Format**: Video length and style suggestions
+6. **Hook**: Opening improvement for retention
+
+### Cron Jobs Required
+
+1. **collectInsights** - Every hour
+   - Processes InsightJob queue
+   - Fetches platform metrics
+   - Seeds jobs for new published posts
+
+2. **analyzeContent** - Daily (optional)
+   - Regenerates AI recommendations
+   - Updates content analysis
+
+### Environment Variables
+```
+OPENAI_API_KEY=xxx (for AI recommendations)
+TIKTOK_CLIENT_KEY=xxx
+TIKTOK_CLIENT_SECRET=xxx
+```
+
+### Success Metrics
+- Time-to-insight < 24h after publish
+- ≥90% of posts receive AI feedback
+- Actionable recommendations per analysis run ≥ 5
