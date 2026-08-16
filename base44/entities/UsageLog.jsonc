@@ -1,0 +1,33 @@
+{
+  "name": "UsageLog",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "User's email"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Usage date (YYYY-MM-DD)"
+    },
+    "videos_generated": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of videos generated today"
+    },
+    "quota_limit": {
+      "type": "number",
+      "description": "Daily quota limit (1 for free, 5 for paid)"
+    },
+    "last_reset_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last quota reset timestamp"
+    }
+  },
+  "required": [
+    "user_email",
+    "date"
+  ]
+}

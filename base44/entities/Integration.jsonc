@@ -1,0 +1,59 @@
+{
+  "name": "Integration",
+  "type": "object",
+  "properties": {
+    "provider_type": {
+      "type": "string",
+      "enum": [
+        "llm_openai",
+        "voice_elevenlabs",
+        "video_luma",
+        "video_runway",
+        "video_veo",
+        "gemini_api",
+        "assembly_shotstack",
+        "assembly_creatomate",
+        "assembly_bannerbear",
+        "assembly_json2video",
+        "assembly_plainly"
+      ],
+      "description": "Type of provider integration"
+    },
+    "provider_name": {
+      "type": "string",
+      "description": "Display name of the provider"
+    },
+    "api_key": {
+      "type": "string",
+      "description": "Encrypted API key"
+    },
+    "additional_config": {
+      "type": "object",
+      "description": "Additional provider-specific configuration"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "inactive",
+        "error"
+      ],
+      "default": "inactive",
+      "description": "Integration status"
+    },
+    "last_tested_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last time connection was tested"
+    },
+    "test_result": {
+      "type": "string",
+      "description": "Result of last test"
+    }
+  },
+  "required": [
+    "provider_type",
+    "provider_name",
+    "api_key"
+  ]
+}

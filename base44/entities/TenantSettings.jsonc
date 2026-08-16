@@ -1,0 +1,49 @@
+{
+  "name": "TenantSettings",
+  "type": "object",
+  "properties": {
+    "publishing_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Allow scheduled posts to be published"
+    },
+    "max_posts_per_day": {
+      "type": "number",
+      "default": 10,
+      "description": "Maximum posts that can be published per day"
+    },
+    "default_privacy": {
+      "type": "string",
+      "enum": [
+        "PUBLIC_TO_EVERYONE",
+        "MUTUAL_FOLLOW_FRIENDS",
+        "SELF_ONLY"
+      ],
+      "default": "PUBLIC_TO_EVERYONE",
+      "description": "Default TikTok privacy level for new posts"
+    },
+    "timezone": {
+      "type": "string",
+      "default": "UTC",
+      "description": "Tenant timezone for scheduling"
+    },
+    "webhook_url": {
+      "type": "string",
+      "description": "Webhook URL for publish event notifications"
+    },
+    "branding": {
+      "type": "object",
+      "description": "Branding settings for the tenant",
+      "properties": {
+        "primary_color": {
+          "type": "string",
+          "default": "#0f172a"
+        },
+        "logo_url": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "required": []
+}

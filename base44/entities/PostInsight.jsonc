@@ -1,0 +1,79 @@
+{
+  "name": "PostInsight",
+  "type": "object",
+  "properties": {
+    "post_id": {
+      "type": "string",
+      "description": "Reference to ScheduledPost"
+    },
+    "platform": {
+      "type": "string",
+      "enum": [
+        "tiktok",
+        "instagram",
+        "youtube",
+        "twitter"
+      ],
+      "default": "tiktok",
+      "description": "Social media platform"
+    },
+    "platform_video_id": {
+      "type": "string",
+      "description": "Platform's native video ID"
+    },
+    "views": {
+      "type": "number",
+      "default": 0,
+      "description": "Total views"
+    },
+    "likes": {
+      "type": "number",
+      "default": 0,
+      "description": "Total likes"
+    },
+    "comments": {
+      "type": "number",
+      "default": 0,
+      "description": "Total comments"
+    },
+    "shares": {
+      "type": "number",
+      "default": 0,
+      "description": "Total shares"
+    },
+    "saves": {
+      "type": "number",
+      "default": 0,
+      "description": "Total saves/bookmarks"
+    },
+    "watch_time_avg": {
+      "type": "number",
+      "description": "Average watch time in seconds"
+    },
+    "completion_rate": {
+      "type": "number",
+      "description": "Percentage of users who watched to end"
+    },
+    "engagement_rate": {
+      "type": "number",
+      "description": "Calculated engagement rate"
+    },
+    "caption": {
+      "type": "string",
+      "description": "Post caption for display"
+    },
+    "video_url": {
+      "type": "string",
+      "description": "Video URL"
+    },
+    "last_synced_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last time metrics were synced from platform"
+    }
+  },
+  "required": [
+    "post_id",
+    "platform"
+  ]
+}

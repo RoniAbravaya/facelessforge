@@ -1,0 +1,58 @@
+{
+  "name": "JobEvent",
+  "type": "object",
+  "properties": {
+    "job_id": {
+      "type": "string",
+      "description": "Reference to Job"
+    },
+    "level": {
+      "type": "string",
+      "enum": [
+        "info",
+        "warning",
+        "error",
+        "success"
+      ],
+      "default": "info",
+      "description": "Event severity level"
+    },
+    "step": {
+      "type": "string",
+      "description": "Pipeline step name"
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "step_started",
+        "step_progress",
+        "step_finished",
+        "step_failed"
+      ],
+      "description": "Type of event"
+    },
+    "message": {
+      "type": "string",
+      "description": "Human-readable message"
+    },
+    "progress": {
+      "type": "number",
+      "description": "Step progress percentage"
+    },
+    "data": {
+      "type": "object",
+      "description": "Additional event data"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Event timestamp"
+    }
+  },
+  "required": [
+    "job_id",
+    "step",
+    "event_type",
+    "message"
+  ]
+}

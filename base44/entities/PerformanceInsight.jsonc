@@ -1,0 +1,65 @@
+{
+  "name": "PerformanceInsight",
+  "type": "object",
+  "properties": {
+    "insight_type": {
+      "type": "string",
+      "enum": [
+        "topic",
+        "style",
+        "duration",
+        "aspect_ratio"
+      ],
+      "description": "Type of insight"
+    },
+    "attribute_value": {
+      "type": "string",
+      "description": "The recommended value (e.g., specific topic, style, duration range)"
+    },
+    "sample_size": {
+      "type": "number",
+      "description": "Number of videos analyzed"
+    },
+    "avg_views": {
+      "type": "number",
+      "description": "Average views for this attribute"
+    },
+    "avg_likes": {
+      "type": "number",
+      "description": "Average likes for this attribute"
+    },
+    "avg_shares": {
+      "type": "number",
+      "description": "Average shares for this attribute"
+    },
+    "avg_engagement_score": {
+      "type": "number",
+      "description": "Average engagement score (weighted metric)"
+    },
+    "confidence_level": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "description": "Confidence based on sample size"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When insight was generated"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When insight becomes stale (7 days)"
+    }
+  },
+  "required": [
+    "insight_type",
+    "attribute_value",
+    "sample_size",
+    "avg_engagement_score"
+  ]
+}

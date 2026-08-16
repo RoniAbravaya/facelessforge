@@ -1,0 +1,52 @@
+{
+  "name": "Artifact",
+  "type": "object",
+  "properties": {
+    "job_id": {
+      "type": "string",
+      "description": "Reference to Job"
+    },
+    "project_id": {
+      "type": "string",
+      "description": "Reference to Project"
+    },
+    "artifact_type": {
+      "type": "string",
+      "enum": [
+        "script",
+        "voiceover",
+        "scene_plan",
+        "video_clip",
+        "final_video",
+        "thumbnail",
+        "captions"
+      ],
+      "description": "Type of artifact"
+    },
+    "file_url": {
+      "type": "string",
+      "description": "Public URL to the artifact file"
+    },
+    "file_size": {
+      "type": "number",
+      "description": "File size in bytes"
+    },
+    "duration": {
+      "type": "number",
+      "description": "Duration in seconds (for audio/video)"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Additional metadata"
+    },
+    "scene_index": {
+      "type": "number",
+      "description": "Scene number for video clips"
+    }
+  },
+  "required": [
+    "job_id",
+    "project_id",
+    "artifact_type"
+  ]
+}

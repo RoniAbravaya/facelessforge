@@ -1,0 +1,56 @@
+{
+  "name": "Subscription",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "User's email (links to User entity)"
+    },
+    "plan": {
+      "type": "string",
+      "enum": [
+        "free",
+        "paid"
+      ],
+      "default": "free",
+      "description": "Current subscription plan"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "cancelled",
+        "past_due"
+      ],
+      "default": "active",
+      "description": "Subscription status"
+    },
+    "stripe_customer_id": {
+      "type": "string",
+      "description": "Stripe customer ID"
+    },
+    "stripe_subscription_id": {
+      "type": "string",
+      "description": "Stripe subscription ID (null for free tier)"
+    },
+    "current_period_start": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Billing period start"
+    },
+    "current_period_end": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Billing period end"
+    },
+    "cancel_at_period_end": {
+      "type": "boolean",
+      "default": false,
+      "description": "Will cancel at period end"
+    }
+  },
+  "required": [
+    "user_email",
+    "plan"
+  ]
+}

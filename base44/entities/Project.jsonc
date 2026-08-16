@@ -1,0 +1,117 @@
+{
+  "name": "Project",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Project title"
+    },
+    "topic": {
+      "type": "string",
+      "description": "Video topic/subject"
+    },
+    "style": {
+      "type": "string",
+      "description": "Visual style description"
+    },
+    "duration": {
+      "type": "number",
+      "description": "Target duration in seconds"
+    },
+    "language": {
+      "type": "string",
+      "default": "en",
+      "description": "Content language"
+    },
+    "aspect_ratio": {
+      "type": "string",
+      "enum": [
+        "9:16",
+        "16:9",
+        "1:1"
+      ],
+      "default": "9:16",
+      "description": "Video aspect ratio"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "generating",
+        "completed",
+        "failed"
+      ],
+      "default": "draft",
+      "description": "Project status"
+    },
+    "selected_providers": {
+      "type": "object",
+      "description": "Selected provider IDs for each type"
+    },
+    "current_step": {
+      "type": "string",
+      "description": "Current generation step"
+    },
+    "progress": {
+      "type": "number",
+      "default": 0,
+      "description": "Overall progress percentage"
+    },
+    "error_message": {
+      "type": "string",
+      "description": "Error details if failed"
+    },
+    "tiktok_settings": {
+      "type": "object",
+      "description": "TikTok posting configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "caption": {
+          "type": "string"
+        },
+        "privacy_level": {
+          "type": "string",
+          "enum": [
+            "PUBLIC_TO_EVERYONE",
+            "MUTUAL_FOLLOW_FRIENDS",
+            "SELF_ONLY"
+          ]
+        },
+        "post_mode": {
+          "type": "string",
+          "enum": [
+            "post_now",
+            "save_draft",
+            "schedule"
+          ]
+        },
+        "scheduled_time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "post_status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "posted",
+            "failed",
+            "scheduled"
+          ]
+        },
+        "tiktok_video_id": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "required": [
+    "title",
+    "topic"
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "name": "Job",
+  "type": "object",
+  "properties": {
+    "project_id": {
+      "type": "string",
+      "description": "Reference to Project"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "queued",
+        "running",
+        "completed",
+        "failed",
+        "cancelled"
+      ],
+      "default": "pending",
+      "description": "Job execution status"
+    },
+    "current_step": {
+      "type": "string",
+      "description": "Current pipeline step"
+    },
+    "progress": {
+      "type": "number",
+      "default": 0,
+      "description": "Progress percentage 0-100"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Job start timestamp"
+    },
+    "finished_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Job completion timestamp"
+    },
+    "error_message": {
+      "type": "string",
+      "description": "Error details if failed"
+    },
+    "retry_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of retry attempts"
+    },
+    "queued_reason": {
+      "type": "string",
+      "description": "Reason for queueing (e.g., 'quota_exceeded')"
+    }
+  },
+  "required": [
+    "project_id"
+  ]
+}

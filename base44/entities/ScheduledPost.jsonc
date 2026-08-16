@@ -1,0 +1,103 @@
+{
+  "name": "ScheduledPost",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Post title/name for internal reference"
+    },
+    "caption": {
+      "type": "string",
+      "description": "Post caption text"
+    },
+    "hashtags": {
+      "type": "string",
+      "description": "Comma-separated hashtags"
+    },
+    "video_url": {
+      "type": "string",
+      "description": "URL to video asset (from generated projects or uploaded)"
+    },
+    "platform": {
+      "type": "string",
+      "enum": [
+        "tiktok"
+      ],
+      "default": "tiktok",
+      "description": "Target social media platform"
+    },
+    "scheduled_for": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When to publish (UTC)"
+    },
+    "timezone": {
+      "type": "string",
+      "default": "UTC",
+      "description": "User's timezone for display"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "scheduled",
+        "publishing",
+        "published",
+        "failed"
+      ],
+      "default": "draft",
+      "description": "Post lifecycle status"
+    },
+    "publish_mode": {
+      "type": "string",
+      "enum": [
+        "post_now",
+        "save_draft"
+      ],
+      "default": "post_now",
+      "description": "TikTok publish mode"
+    },
+    "privacy_level": {
+      "type": "string",
+      "enum": [
+        "PUBLIC_TO_EVERYONE",
+        "MUTUAL_FOLLOW_FRIENDS",
+        "SELF_ONLY"
+      ],
+      "default": "PUBLIC_TO_EVERYONE",
+      "description": "TikTok privacy setting"
+    },
+    "tiktok_post_id": {
+      "type": "string",
+      "description": "TikTok video ID after publishing"
+    },
+    "tiktok_share_url": {
+      "type": "string",
+      "description": "TikTok share URL"
+    },
+    "published_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Actual publish timestamp"
+    },
+    "error_message": {
+      "type": "string",
+      "description": "Error details if failed"
+    },
+    "retry_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of publish attempts"
+    },
+    "linked_project_id": {
+      "type": "string",
+      "description": "Reference to source Project if video was generated"
+    }
+  },
+  "required": [
+    "title",
+    "caption",
+    "video_url",
+    "scheduled_for"
+  ]
+}
